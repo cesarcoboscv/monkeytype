@@ -1174,7 +1174,7 @@ export function createErrorMessage(error: unknown, message: string): string {
 }
 
 export function isAnyPopupVisible(): boolean {
-  const popups = document.querySelectorAll(".popupWrapper");
+  const popups = document.querySelectorAll("#popups .popupWrapper");
   let popupVisible = false;
   for (const popup of popups) {
     const style = window.getComputedStyle(popup);
@@ -1250,4 +1250,12 @@ export function isPasswordStrong(password: string): boolean {
   const hasSpecial = !!password.match(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/);
   const isLong = password.length >= 8;
   return hasCapital && hasNumber && hasSpecial && isLong;
+}
+
+export function areUnsortedArraysEqual(a: unknown[], b: unknown[]): boolean {
+  return a.length === b.length && a.every((v) => b.includes(v));
+}
+
+export function areSortedArraysEqual(a: unknown[], b: unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }

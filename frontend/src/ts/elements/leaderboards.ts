@@ -137,7 +137,7 @@ function updateFooter(lb: LbKey): void {
 
   if (
     window.location.hostname !== "localhost" &&
-    (DB.getSnapshot().typingStats?.timeTyping ?? 0) < 7200
+    (DB.getSnapshot()?.typingStats?.timeTyping ?? 0) < 7200
   ) {
     $(`#leaderboardsWrapper table.${side} tfoot`).html(`
     <tr>
@@ -255,6 +255,7 @@ async function fillTable(lb: LbKey, prepend?: number): Promise<void> {
   const loggedInUserName = DB.getSnapshot()?.name;
 
   const snap = DB.getSnapshot();
+  if (!snap) return;
 
   const avatarUrlPromises = currentData[lb].map(async (entry) => {
     const isCurrentUser =
@@ -812,11 +813,10 @@ $(document).on("keydown", (event) => {
   }
 });
 
-$(document).on("click", "#top #menu .textButton", (e) => {
+$("#top #menu").on("click", ".textButton", (e) => {
   if ($(e.currentTarget).hasClass("leaderboards")) {
     show();
   }
-  return false;
 });
 
 $(document).on("keypress", "#top #menu .textButton", (e) => {

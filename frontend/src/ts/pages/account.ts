@@ -106,7 +106,7 @@ function loadMoreLines(lineIndex?: number): void {
 
     if (result.tags !== undefined && result.tags.length > 0) {
       result.tags.forEach((tag) => {
-        DB.getSnapshot().tags?.forEach((snaptag) => {
+        DB.getSnapshot()?.tags?.forEach((snaptag) => {
           if (tag === snaptag._id) {
             tagNames += snaptag.display + ", ";
           }
@@ -242,6 +242,7 @@ function fillContent(): void {
   AllTimeStats.update();
 
   const snapshot = DB.getSnapshot();
+  if (!snapshot) return;
 
   PbTables.update(snapshot.personalBests);
   Profile.update("account", snapshot);
@@ -298,12 +299,21 @@ function fillContent(): void {
 
   filteredResults = [];
   $(".pageAccount .history table tbody").empty();
-  DB.getSnapshot().results?.forEach(
+  DB.getSnapshot()?.results?.forEach(
     (result: MonkeyTypes.Result<MonkeyTypes.Mode>) => {
       // totalSeconds += tt;
 
       //apply filters
       try {
+        if (
+          !ResultFilters.getFilter("pb", result.isPb === true ? "yes" : "no")
+        ) {
+          if (filterDebug) {
+            console.log(`skipping result due to pb filter`, result);
+          }
+          return;
+        }
+
         let resdiff = result.difficulty;
         if (resdiff == undefined) {
           resdiff = "normal";
@@ -428,14 +438,14 @@ function fillContent(): void {
         let tagHide = true;
         if (result.tags === undefined || result.tags.length === 0) {
           //no tags, show when no tag is enabled
-          if (DB.getSnapshot().tags?.length || 0 > 0) {
+          if ((DB.getSnapshot()?.tags?.length ?? 0) > 0) {
             if (ResultFilters.getFilter("tags", "none")) tagHide = false;
           } else {
             tagHide = false;
           }
         } else {
           //tags exist
-          const validTags = DB.getSnapshot().tags?.map((t) => t._id);
+          const validTags = DB.getSnapshot()?.tags?.map((t) => t._id);
 
           if (validTags === undefined) return;
 
@@ -902,7 +912,7 @@ function fillContent(): void {
 }
 
 export async function downloadResults(): Promise<void> {
-  if (DB.getSnapshot().results !== undefined) return;
+  if (DB.getSnapshot()?.results !== undefined) return;
   const results = await DB.getUserResults();
   if (results === false && !ConnectionState.get()) {
     Notifications.add("Could not get results - you are offline", -1, 5);
@@ -1043,7 +1053,7 @@ $(".pageAccount #accountHistoryChart").on("click", () => {
   $(`#result-${index}`).addClass("active");
 });
 
-$(document).on("click", ".pageAccount .miniResultChartButton", (event) => {
+$(".pageAccount").on("click", ".miniResultChartButton", (event) => {
   console.log("updating");
   const filteredId = $(event.currentTarget).attr("filteredResultsId");
   if (filteredId === undefined) return;
@@ -1057,43 +1067,59 @@ $(document).on("click", ".pageAccount .miniResultChartButton", (event) => {
   );
 });
 
-$(document).on("click", ".history-wpm-header", () => {
+$(".pageAccount .group.history").on("click", ".history-wpm-header", () => {
   sortAndRefreshHistory("wpm", ".history-wpm-header");
 });
 
-$(document).on("click", ".history-raw-header", () => {
+$(".pageAccount .group.history").on("click", ".history-raw-header", () => {
   sortAndRefreshHistory("rawWpm", ".history-raw-header");
 });
 
-$(document).on("click", ".history-acc-header", () => {
+$(".pageAccount .group.history").on("click", ".history-acc-header", () => {
   sortAndRefreshHistory("acc", ".history-acc-header");
 });
 
-$(document).on("click", ".history-correct-chars-header", () => {
-  sortAndRefreshHistory("correctChars", ".history-correct-chars-header");
-});
+$(".pageAccount .group.history").on(
+  "click",
+  ".history-correct-chars-header",
+  () => {
+    sortAndRefreshHistory("correctChars", ".history-correct-chars-header");
+  }
+);
 
-$(document).on("click", ".history-incorrect-chars-header", () => {
-  sortAndRefreshHistory("incorrectChars", ".history-incorrect-chars-header");
-});
+$(".pageAccount .group.history").on(
+  "click",
+  ".history-incorrect-chars-header",
+  () => {
+    sortAndRefreshHistory("incorrectChars", ".history-incorrect-chars-header");
+  }
+);
 
-$(document).on("click", ".history-consistency-header", () => {
-  sortAndRefreshHistory("consistency", ".history-consistency-header");
-});
+$(".pageAccount .group.history").on(
+  "click",
+  ".history-consistency-header",
+  () => {
+    sortAndRefreshHistory("consistency", ".history-consistency-header");
+  }
+);
 
-$(document).on("click", ".history-date-header", () => {
+$(".pageAccount .group.history").on("click", ".history-date-header", () => {
   sortAndRefreshHistory("timestamp", ".history-date-header");
 });
 
 // Resets sorting to by date' when applying filers (normal or advanced)
-$(document).on("click", ".buttonsAndTitle .buttons .button", () => {
-  // We want to 'force' descending sort:
-  sortAndRefreshHistory("timestamp", ".history-date-header", true);
-});
-
-$(document).on(
+$(".pageAccount .group.history").on(
   "click",
-  ".pageAccount .topFilters .button, .pageAccount .filterButtons .button",
+  ".buttonsAndTitle .buttons .button",
+  () => {
+    // We want to 'force' descending sort:
+    sortAndRefreshHistory("timestamp", ".history-date-header", true);
+  }
+);
+
+$(".pageAccount .group.topFilters").on(
+  "click",
+  ".button, .pageAccount .filterButtons .button",
   () => {
     setTimeout(() => {
       update();
@@ -1101,9 +1127,9 @@ $(document).on(
   }
 );
 
-$(document).on(
+$(".pageAccount .group.presetFilterButtons").on(
   "click",
-  ".pageAccount .group.presetFilterButtons .filterBtns .filterPresets .select-filter-preset",
+  ".filterBtns .filterPresets .select-filter-preset",
   (e) => {
     ResultFilters.setFilterPreset($(e.target).data("id"));
     update();
@@ -1118,8 +1144,10 @@ $(".pageAccount .content .group.aboveHistory .exportCSV").on("click", () => {
   Misc.downloadResultsCSV(filteredResults);
 });
 
-$(document).on("click", ".pageAccount .profile .details .copyLink", () => {
-  const { name } = DB.getSnapshot();
+$(".pageAccount .profile").on("click", ".details .copyLink", () => {
+  const snapshot = DB.getSnapshot();
+  if (!snapshot) return;
+  const { name } = snapshot;
   const url = `${location.origin}/profile/${name}`;
 
   navigator.clipboard.writeText(url).then(
@@ -1144,8 +1172,9 @@ export const page = new Page(
     ResultFilters.removeButtons();
   },
   async () => {
-    ResultFilters.appendButtons();
-    if (DB.getSnapshot().results == undefined) {
+    await ResultFilters.appendButtons();
+    ResultFilters.updateActive();
+    if (DB.getSnapshot()?.results == undefined) {
       $(".pageLoading .fill, .pageAccount .fill").css("width", "0%");
       $(".pageAccount .content").addClass("hidden");
       $(".pageAccount .preloader").removeClass("hidden");
