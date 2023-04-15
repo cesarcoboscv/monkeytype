@@ -30,6 +30,10 @@ declare namespace MonkeyTypes {
     };
     users: {
       signUp: boolean;
+      lastHashesCheck: {
+        enabled: boolean;
+        maxHashes: number;
+      };
       autoBan: {
         enabled: boolean;
         maxCount: number;
@@ -43,6 +47,7 @@ declare namespace MonkeyTypes {
       };
       xp: {
         enabled: boolean;
+        funboxBonus: number;
         gainMultiplier: number;
         maxDailyBonus: number;
         minDailyBonus: number;
@@ -56,6 +61,9 @@ declare namespace MonkeyTypes {
         enabled: boolean;
         maxMail: number;
       };
+    };
+    admin: {
+      endpointsEnabled: boolean;
     };
     apeKeys: {
       endpointsEnabled: boolean;
@@ -76,9 +84,17 @@ declare namespace MonkeyTypes {
       leaderboardExpirationTimeInDays: number;
       maxResults: number;
       validModeRules: ValidModeRule[];
+      scheduleRewardsModeRules: ValidModeRule[];
       dailyLeaderboardCacheSize: number;
       topResultsToAnnounce: number;
       xpRewardBrackets: RewardBracket[];
+    };
+    leaderboards: {
+      weeklyXp: {
+        enabled: boolean;
+        expirationTimeInDays: number;
+        xpRewardBrackets: RewardBracket[];
+      };
     };
   }
 
@@ -162,7 +178,8 @@ declare namespace MonkeyTypes {
     timeTyping?: number;
     uid: string;
     quoteMod?: boolean;
-    cannotReport?: boolean;
+    configurationMod?: boolean;
+    canReport?: boolean;
     banned?: boolean;
     canManageApeKeys?: boolean;
     favoriteQuotes?: Record<string, string[]>;
@@ -174,6 +191,8 @@ declare namespace MonkeyTypes {
     xp?: number;
     inbox?: MonkeyMail[];
     streak?: UserStreak;
+    lastReultHashes?: string[];
+    lbOptOut?: boolean;
   }
 
   interface UserStreak {
@@ -351,7 +370,6 @@ declare namespace MonkeyTypes {
     wpm: number[];
     raw: number[];
     err: number[];
-    unsmoothedRaw?: number[];
   }
 
   interface KeyStats {
@@ -404,7 +422,6 @@ declare namespace MonkeyTypes {
     keySpacing: number[] | "toolong";
     keyDuration: number[] | "toolong";
     customText: MonkeyTypes.CustomText;
-    smoothConsistency: number;
     wpmConsistency: number;
     lang: string;
     challenge?: string | null;
@@ -426,7 +443,7 @@ declare namespace MonkeyTypes {
     level?: number;
   }
 
-  type ReportTypes = "quote";
+  type ReportTypes = "quote" | "user";
 
   interface Report {
     _id: ObjectId;
@@ -460,5 +477,10 @@ declare namespace MonkeyTypes {
     quoteId: number;
     ratings: number;
     totalRating: number;
+  }
+
+  interface FunboxMetadata {
+    canGetPb: boolean;
+    difficultyLevel: number;
   }
 }

@@ -1,4 +1,5 @@
 import * as Loader from "../elements/loader";
+import { normal as normalBlend } from "color-blend";
 
 async function fetchJson<T>(url: string): Promise<T> {
   try {
@@ -151,15 +152,15 @@ export async function findCurrentGroup(
   return retgroup;
 }
 
-let funboxList: MonkeyTypes.FunboxObject[] | undefined;
-export async function getFunboxList(): Promise<MonkeyTypes.FunboxObject[]> {
+let funboxList: MonkeyTypes.FunboxMetadata[] | undefined;
+export async function getFunboxList(): Promise<MonkeyTypes.FunboxMetadata[]> {
   if (!funboxList) {
-    let list = await cachedFetchJson<MonkeyTypes.FunboxObject[]>(
+    let list = await cachedFetchJson<MonkeyTypes.FunboxMetadata[]>(
       "/./funbox/_list.json"
     );
     list = list.sort(function (
-      a: MonkeyTypes.FunboxObject,
-      b: MonkeyTypes.FunboxObject
+      a: MonkeyTypes.FunboxMetadata,
+      b: MonkeyTypes.FunboxMetadata
     ) {
       const nameA = a.name.toLowerCase();
       const nameB = b.name.toLowerCase();
@@ -176,8 +177,8 @@ export async function getFunboxList(): Promise<MonkeyTypes.FunboxObject[]> {
 
 export async function getFunbox(
   funbox: string
-): Promise<MonkeyTypes.FunboxObject | undefined> {
-  const list: MonkeyTypes.FunboxObject[] = await getFunboxList();
+): Promise<MonkeyTypes.FunboxMetadata | undefined> {
+  const list: MonkeyTypes.FunboxMetadata[] = await getFunboxList();
   return list.find(function (element) {
     return element.name == funbox;
   });
@@ -233,6 +234,66 @@ export async function getContributorsList(): Promise<string[]> {
   } catch (e) {
     throw new Error("Contributors list JSON fetch failed");
   }
+}
+
+export function blendTwoHexColors(
+  color1: string,
+  color2: string,
+  opacity: number
+): string {
+  const rgb1 = hexToRgb(color1);
+  const rgb2 = hexToRgb(color2);
+
+  if (rgb1 && rgb2) {
+    const rgba1 = {
+      r: rgb1.r,
+      g: rgb1.g,
+      b: rgb1.b,
+      a: 1,
+    };
+    const rgba2 = {
+      r: rgb2.r,
+      g: rgb2.g,
+      b: rgb2.b,
+      a: opacity,
+    };
+    const blended = normalBlend(rgba1, rgba2);
+    return rgbToHex(blended.r, blended.g, blended.b);
+  } else {
+    return "#000000";
+  }
+}
+
+function hexToRgb(hex: string):
+  | {
+      r: number;
+      g: number;
+      b: number;
+    }
+  | undefined {
+  if (hex.length != 4 && hex.length != 7 && !hex.startsWith("#")) {
+    return undefined;
+  }
+  let r: number;
+  let g: number;
+  let b: number;
+  if (hex.length == 4) {
+    r = ("0x" + hex[1] + hex[1]) as unknown as number;
+    g = ("0x" + hex[2] + hex[2]) as unknown as number;
+    b = ("0x" + hex[3] + hex[3]) as unknown as number;
+  } else if (hex.length == 7) {
+    r = ("0x" + hex[1] + hex[2]) as unknown as number;
+    g = ("0x" + hex[3] + hex[4]) as unknown as number;
+    b = ("0x" + hex[5] + hex[6]) as unknown as number;
+  } else {
+    return undefined;
+  }
+
+  return { r, g, b };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
 function hexToHSL(hex: string): {
@@ -401,6 +462,10 @@ export function capitalizeFirstLetterOfEachWord(str: string): string {
     .split(/ +/)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join(" ");
+}
+
+export function capitalizeFirstLetter(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 export function isASCIILetter(c: string): boolean {
@@ -657,19 +722,66 @@ export function getASCII(): string {
   return ret;
 }
 
-export function getArrows(): string {
-  const arrowArray = ["←", "↑", "→", "↓"];
-  let arrowWord = "";
-  let lastchar;
-  for (let i = 0; i < 5; i++) {
-    let random = randomElementFromArray(arrowArray);
-    while (random === lastchar) {
-      random = randomElementFromArray(arrowArray);
+// code for "generateStep" is from Mirin's "Queue" modfile,
+// converted from lua to typescript by Spax
+// lineout: https://youtu.be/LnnArS9yrSs
+let footTrack = false;
+let currFacing = 0;
+let facingCount = 0;
+let lastLeftStep = 0,
+  lastRightStep = 3,
+  leftStepCount = 0,
+  rightStepCount = 0;
+function generateStep(leftRightOverride: boolean): number {
+  facingCount--;
+  let randomStep = Math.round(Math.random());
+  let stepValue = Math.round(Math.random() * 5 - 0.5);
+  if (leftRightOverride) {
+    footTrack = Boolean(Math.round(Math.random()));
+    if (footTrack) stepValue = 3;
+    else stepValue = 0;
+  } else {
+    //right foot
+    if (footTrack) {
+      if (lastLeftStep === randomStep) leftStepCount++;
+      else leftStepCount = 0;
+      if (leftStepCount > 1 || (rightStepCount > 0 && leftStepCount > 0)) {
+        randomStep = 1 - randomStep;
+        leftStepCount = 0;
+      }
+      lastLeftStep = randomStep;
+      stepValue = randomStep * (currFacing + 1);
+      //left foot
+    } else {
+      if (lastRightStep === randomStep) rightStepCount++;
+      else rightStepCount = 0;
+      if (rightStepCount > 1 || (rightStepCount > 0 && leftStepCount > 0)) {
+        randomStep = 1 - randomStep;
+        rightStepCount = 0;
+      }
+      lastRightStep = randomStep;
+      stepValue = 3 - randomStep * (currFacing + 1);
     }
-    lastchar = random;
-    arrowWord += random;
+    //alternation
+    footTrack = !footTrack;
+
+    if (facingCount < 0 && randomStep === 0) {
+      currFacing = 1 - currFacing;
+      facingCount = Math.floor(Math.random() * 3) + 3;
+    }
   }
-  return arrowWord;
+
+  return stepValue;
+}
+
+export function chart2Word(first: boolean): string {
+  const arrowArray = ["←", "↓", "↑", "→"];
+  let measure = "";
+  for (let i = 0; i < 4; i++) {
+    measure += arrowArray[generateStep(i === 0 && first)];
+  }
+
+  return measure;
 }
 
 export function getPositionString(number: number): string {
@@ -893,8 +1005,8 @@ export function canQuickRestart(
   CustomText: MonkeyTypes.CustomText,
   customTextIsLong: boolean
 ): boolean {
-  const wordsLong = mode === "words" && words >= 1000;
-  const timeLong = mode === "time" && time >= 900;
+  const wordsLong = mode === "words" && (words >= 1000 || words === 0);
+  const timeLong = mode === "time" && (time >= 900 || time === 0);
   const customTextLong = mode === "custom" && customTextIsLong == true;
   const customTextRandomWordsLong =
     mode === "custom" && CustomText.isWordRandom && CustomText.word >= 1000;
@@ -1190,12 +1302,24 @@ export function createErrorMessage(error: unknown, message: string): string {
   return message;
 }
 
+export function isElementVisible(query: string): boolean {
+  const popup = document.querySelector(query);
+  if (!popup) {
+    return false;
+  }
+  const style = window.getComputedStyle(popup);
+  return style.display !== "none";
+}
+
+export function isPopupVisible(popupId: string): boolean {
+  return isElementVisible(`#popups #${popupId}`);
+}
+
 export function isAnyPopupVisible(): boolean {
   const popups = document.querySelectorAll("#popups .popupWrapper");
   let popupVisible = false;
   for (const popup of popups) {
-    const style = window.getComputedStyle(popup);
-    if (style.display !== "none") {
+    if (isPopupVisible(popup.id)) {
       popupVisible = true;
       break;
     }
@@ -1285,12 +1409,41 @@ export function memoizeAsync<T extends (...args: any) => Promise<any>>(
   }) as T;
 }
 
+export class Wordset {
+  public words: string[];
+  public length: number;
+  constructor(words: string[]) {
+    this.words = words;
+    this.length = this.words.length;
+  }
+
+  public randomWord(mode: MonkeyTypes.FunboxWordsFrequency): string {
+    if (mode === "zipf") {
+      return this.words[dreymarIndex(this.words.length)];
+    } else {
+      return randomElementFromArray(this.words);
+    }
+  }
+}
+
+export class Section {
+  public title: string;
+  public author: string;
+  public words: string[];
+  constructor(title: string, author: string, words: string[]) {
+    this.title = title;
+    this.author = author;
+    this.words = words;
+  }
+}
+
 export function isPasswordStrong(password: string): boolean {
   const hasCapital = !!password.match(/[A-Z]/);
   const hasNumber = !!password.match(/[\d]/);
   const hasSpecial = !!password.match(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/);
   const isLong = password.length >= 8;
-  return hasCapital && hasNumber && hasSpecial && isLong;
+  const isShort = password.length <= 64;
+  return hasCapital && hasNumber && hasSpecial && isLong && isShort;
 }
 
 export function areUnsortedArraysEqual(a: unknown[], b: unknown[]): boolean {
@@ -1299,4 +1452,93 @@ export function areUnsortedArraysEqual(a: unknown[], b: unknown[]): boolean {
 
 export function areSortedArraysEqual(a: unknown[], b: unknown[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+export function intersect<T>(a: T[], b: T[], removeDuplicates = false): T[] {
+  let t;
+  if (b.length > a.length) (t = b), (b = a), (a = t); // indexOf to loop over shorter
+  const filtered = a.filter(function (e) {
+    return b.indexOf(e) > -1;
+  });
+  return removeDuplicates ? [...new Set(filtered)] : filtered;
+}
+
+export function htmlToText(html: string): string {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return el.textContent || el.innerText || "";
+}
+
+export function camelCaseToWords(str: string): string {
+  return str
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .toLowerCase();
+}
+
+export function loadCSS(href: string, prepend = false): void {
+  const link = document.createElement("link");
+  link.type = "text/css";
+  link.rel = "stylesheet";
+  link.href = href;
+  if (prepend) {
+    document.getElementsByTagName("head")[0].prepend(link);
+  } else {
+    document.getElementsByTagName("head")[0].appendChild(link);
+  }
+}
+
+export function isLocalhost(): boolean {
+  return (
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1" ||
+    location.hostname === ""
+  );
+}
+
+export function getBinary(): string {
+  const ret = Math.floor(Math.random() * 256).toString(2);
+  return ret.padStart(8, "0");
+}
+
+export function dreymarIndex(arrayLength: number): number {
+  const n = arrayLength;
+  const g = 0.5772156649;
+  const M = Math.log(n) + g;
+  const r = Math.random();
+  const h = Math.exp(r * M - g);
+  const W = Math.ceil(h);
+  return W - 1;
+}
+
+export async function checkIfLanguageSupportsZipf(
+  language: string
+): Promise<"yes" | "no" | "unknown"> {
+  const lang = await getLanguage(language);
+  if (lang.orderedByFrequency === true) return "yes";
+  if (lang.orderedByFrequency === false) return "no";
+  return "unknown";
+}
+
+export function getStartOfDayTimestamp(timestamp: number): number {
+  return timestamp - (timestamp % 86400000);
+}
+
+export function getCurrentDayTimestamp(): number {
+  const currentTime = Date.now();
+  return getStartOfDayTimestamp(currentTime);
+}
+
+export function isYesterday(timestamp: number): boolean {
+  const yesterday = getStartOfDayTimestamp(Date.now() - 86400000);
+  const date = getStartOfDayTimestamp(timestamp);
+
+  return yesterday === date;
+}
+
+export function isToday(timestamp: number): boolean {
+  const today = getStartOfDayTimestamp(Date.now());
+  const date = getStartOfDayTimestamp(timestamp);
+
+  return today === date;
 }

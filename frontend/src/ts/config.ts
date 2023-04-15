@@ -12,6 +12,7 @@ import { Auth } from "./firebase";
 import * as AnalyticsController from "./controllers/analytics-controller";
 import * as AccountButton from "./elements/account-button";
 import { debounce } from "throttle-debounce";
+import { canSetConfigWithCurrentFunboxes } from "./test/funbox/funbox-validation";
 
 export let localStorageConfig: MonkeyTypes.Config;
 export let dbConfigLoaded = false;
@@ -92,6 +93,10 @@ export async function saveFullConfigToLocalStorage(
 export function setNumbers(numb: boolean, nosave?: boolean): boolean {
   if (!isConfigValueValid("numbers", numb, ["boolean"])) return false;
 
+  if (!canSetConfigWithCurrentFunboxes("numbers", numb, config.funbox)) {
+    return false;
+  }
+
   if (config.mode === "quote") {
     numb = false;
   }
@@ -105,6 +110,10 @@ export function setNumbers(numb: boolean, nosave?: boolean): boolean {
 //punctuation
 export function setPunctuation(punc: boolean, nosave?: boolean): boolean {
   if (!isConfigValueValid("punctuation", punc, ["boolean"])) return false;
+
+  if (!canSetConfigWithCurrentFunboxes("punctuation", punc, config.funbox)) {
+    return false;
+  }
 
   if (config.mode === "quote") {
     punc = false;
@@ -125,10 +134,10 @@ export function setMode(mode: MonkeyTypes.Mode, nosave?: boolean): boolean {
     return false;
   }
 
-  if (mode !== "words" && config.funbox === "memory") {
-    Notifications.add("Memory funbox can only be used with words mode.", 0);
+  if (!canSetConfigWithCurrentFunboxes("mode", mode, config.funbox)) {
     return false;
   }
+
   const previous = config.mode;
   config.mode = mode;
   if (config.mode == "custom") {
@@ -166,7 +175,22 @@ export function setPlaySoundOnClick(
 ): boolean {
   if (
     !isConfigValueValid("play sound on click", val, [
-      ["off", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
+      [
+        "off",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+      ],
     ])
   ) {
     return false;
@@ -235,6 +259,36 @@ export function setFunbox(funbox: string, nosave?: boolean): boolean {
   return true;
 }
 
+export function toggleFunbox(
+  funbox: string,
+  nosave?: boolean
+): number | boolean {
+  if (!isConfigValueValid("funbox", funbox, ["string"])) return false;
+
+  let r;
+
+  const funboxArray = config.funbox.split("#");
+  if (funboxArray[0] == "none") funboxArray.splice(0, 1);
+  if (!funboxArray.includes(funbox)) {
+    funboxArray.push(funbox);
+    config.funbox = funboxArray.sort().join("#");
+    r = funboxArray.indexOf(funbox);
+  } else {
+    r = funboxArray.indexOf(funbox);
+    funboxArray.splice(r, 1);
+    if (funboxArray.length == 0) {
+      config.funbox = "none";
+    } else {
+      config.funbox = funboxArray.join("#");
+    }
+    r = -r - 1;
+  }
+  saveToLocalStorage("funbox", nosave);
+  ConfigEvent.dispatch("funbox", config.funbox);
+
+  return r;
+}
+
 export function setBlindMode(blind: boolean, nosave?: boolean): boolean {
   if (!isConfigValueValid("blind mode", blind, ["boolean"])) return false;
 
@@ -245,32 +299,64 @@ export function setBlindMode(blind: boolean, nosave?: boolean): boolean {
   return true;
 }
 
-export function setChartAccuracy(
-  chartAccuracy: boolean,
+export function setAccountChart(
+  array: MonkeyTypes.AccountChart,
   nosave?: boolean
 ): boolean {
-  if (!isConfigValueValid("chart accuracy", chartAccuracy, ["boolean"])) {
+  if (
+    !isConfigValueValid("account chart", array, [["on", "off"], "stringArray"])
+  ) {
     return false;
   }
 
-  config.chartAccuracy = chartAccuracy;
-  saveToLocalStorage("chartAccuracy", nosave);
-  ConfigEvent.dispatch("chartAccuracy", config.chartAccuracy);
+  config.accountChart = array;
+  saveToLocalStorage("accountChart", nosave);
+  ConfigEvent.dispatch("accountChart", config.accountChart);
 
   return true;
 }
 
-export function setChartStyle(
-  chartStyle: MonkeyTypes.ChartStyle,
+export function setAccountChartAccuracy(
+  value: boolean,
   nosave?: boolean
 ): boolean {
-  if (!isConfigValueValid("chart style", chartStyle, [["line", "scatter"]])) {
+  if (!isConfigValueValid("account chart accuracy", value, ["boolean"])) {
     return false;
   }
 
-  config.chartStyle = chartStyle;
-  saveToLocalStorage("chartStyle", nosave);
-  ConfigEvent.dispatch("chartStyle", config.chartStyle);
+  config.accountChart[0] = value ? "on" : "off";
+  saveToLocalStorage("accountChart", nosave);
+  ConfigEvent.dispatch("accountChart", config.accountChart);
+
+  return true;
+}
+
+export function setAccountChartAvg10(
+  value: boolean,
+  nosave?: boolean
+): boolean {
+  if (!isConfigValueValid("account chart avg 10", value, ["boolean"])) {
+    return false;
+  }
+
+  config.accountChart[1] = value ? "on" : "off";
+  saveToLocalStorage("accountChart", nosave);
+  ConfigEvent.dispatch("accountChart", config.accountChart);
+
+  return true;
+}
+
+export function setAccountChartAvg100(
+  value: boolean,
+  nosave?: boolean
+): boolean {
+  if (!isConfigValueValid("account chart avg 100", value, ["boolean"])) {
+    return false;
+  }
+
+  config.accountChart[2] = value ? "on" : "off";
+  saveToLocalStorage("accountChart", nosave);
+  ConfigEvent.dispatch("accountChart", config.accountChart);
 
   return true;
 }
@@ -812,16 +898,7 @@ export function setHighlightMode(
     return false;
   }
 
-  if (
-    mode === "word" &&
-    (config.funbox === "nospace" ||
-      config.funbox === "read_ahead" ||
-      config.funbox === "read_ahead_easy" ||
-      config.funbox === "read_ahead_hard" ||
-      config.funbox === "tts" ||
-      config.funbox === "arrows")
-  ) {
-    Notifications.add("Can't use word highlight with this funbox", 0);
+  if (!canSetConfigWithCurrentFunboxes("highlightMode", mode, config.funbox)) {
     return false;
   }
 
@@ -970,6 +1047,10 @@ export function setTimeConfig(
 ): boolean {
   if (!isConfigValueValid("time", time, ["number"])) return false;
 
+  if (!canSetConfigWithCurrentFunboxes("words", time, config.funbox)) {
+    return false;
+  }
+
   const newTime = isNaN(time) || time < 0 ? DefaultConfig.time : time;
 
   config.time = newTime;
@@ -1029,6 +1110,10 @@ export function setWordCount(
   nosave?: boolean
 ): boolean {
   if (!isConfigValueValid("words", wordCount, ["number"])) return false;
+
+  if (!canSetConfigWithCurrentFunboxes("words", wordCount, config.funbox)) {
+    return false;
+  }
 
   const newWordCount =
     wordCount < 0 || wordCount > 100000 ? DefaultConfig.words : wordCount;
@@ -1127,17 +1212,16 @@ export function setFontFamily(font: string, nosave?: boolean): boolean {
     Notifications.add(
       "Empty input received, reverted to the default font.",
       0,
-      3,
-      "Custom font"
+      {
+        customTitle: "Custom font",
+      }
     );
   }
   if (!isConfigKeyValid(font)) {
-    Notifications.add(
-      `Invalid font name value: "${font}".`,
-      -1,
-      3,
-      "Custom font"
-    );
+    Notifications.add(`Invalid font name value: "${font}".`, -1, {
+      customTitle: "Custom font",
+      duration: 3,
+    });
     return false;
   }
   config.fontFamily = font;
@@ -1276,7 +1360,9 @@ function setThemes(
       Notifications.add(
         "Missing sub alt color. Please edit it in the custom theme settings and save your changes.",
         0,
-        7
+        {
+          duration: 7,
+        }
       );
     }
     customThemeColors.splice(4, 0, "#000000");
@@ -1363,7 +1449,9 @@ export function setCustomThemeColors(
     Notifications.add(
       "Missing sub alt color. Please edit it in the custom theme settings and save your changes.",
       0,
-      7
+      {
+        duration: 7,
+      }
     );
     colors.splice(4, 0, "#000000");
   }
@@ -1571,7 +1659,10 @@ export function setFontSize(fontSize: number, nosave?: boolean): boolean {
   );
 
   saveToLocalStorage("fontSize", nosave);
-  ConfigEvent.dispatch("fontSize", config.fontSize);
+  ConfigEvent.dispatch("fontSize", config.fontSize, nosave);
+
+  // trigger a resize event to update the layout - handled in ui.ts:108
+  $(window).trigger("resize");
 
   return true;
 }
@@ -1615,9 +1706,6 @@ export async function setCustomLayoutfluid(
   ) as MonkeyTypes.CustomLayoutFluid;
 
   config.customLayoutfluid = customLayoutfluid;
-  $(".pageSettings .section.customLayoutfluid input").val(
-    customLayoutfluid.replace(/#/g, " ")
-  );
   saveToLocalStorage("customLayoutfluid", nosave);
   ConfigEvent.dispatch("customLayoutFluid", config.customLayoutfluid);
 
@@ -1771,8 +1859,7 @@ export function apply(
     setPaceCaretCustomSpeed(configObj.paceCaretCustomSpeed, true);
     setRepeatedPace(configObj.repeatedPace, true);
     setPageWidth(configObj.pageWidth, true);
-    setChartAccuracy(configObj.chartAccuracy, true);
-    setChartStyle(configObj.chartStyle, true);
+    setAccountChart(configObj.accountChart, true);
     setMinBurst(configObj.minBurst, true);
     setMinBurstCustomSpeed(configObj.minBurstCustomSpeed, true);
     setMinWpm(configObj.minWpm, true);

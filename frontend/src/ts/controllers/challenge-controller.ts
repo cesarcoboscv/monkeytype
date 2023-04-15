@@ -2,7 +2,7 @@ import * as Misc from "../utils/misc";
 import * as Notifications from "../elements/notifications";
 import * as ManualRestart from "../test/manual-restart-tracker";
 import * as CustomText from "../test/custom-text";
-import * as Funbox from "../test/funbox";
+import * as Funbox from "../test/funbox/funbox";
 import Config, * as UpdateConfig from "../config";
 import * as TestUI from "../test/test-ui";
 import * as ConfigEvent from "../observables/config-event";
@@ -94,10 +94,29 @@ export function verify(
               }
             }
           } else if (requirementType == "funbox") {
-            const funboxMode = requirementValue["exact"];
+            const funboxMode = requirementValue["exact"]
+              .toString()
+              .split("#")
+              .sort()
+              .join("#");
             if (funboxMode != result.funbox) {
               requirementsMet = false;
-              failReasons.push(`${funboxMode} funbox not active`);
+              for (const f of funboxMode.split("#")) {
+                if (
+                  result.funbox?.split("#").find((rf) => rf == f) == undefined
+                ) {
+                  failReasons.push(`${f} funbox not active`);
+                }
+              }
+              if (result.funbox?.split("#")) {
+                for (const f of result.funbox.split("#")) {
+                  if (
+                    funboxMode.split("#").find((rf) => rf == f) == undefined
+                  ) {
+                    failReasons.push(`${f} funbox active`);
+                  }
+                }
+              }
             }
           } else if (requirementType == "raw") {
             const rawMode = Object.keys(requirementValue)[0];
@@ -134,7 +153,9 @@ export function verify(
             Notifications.add(
               "You will receive a role shortly. Please don't post a screenshot in challenge submissions.",
               1,
-              5
+              {
+                duration: 5,
+              }
             );
           }
           Notifications.add(
@@ -210,6 +231,7 @@ export async function setup(challengeName: string): Promise<boolean> {
       UpdateConfig.setMode("words", true);
       UpdateConfig.setDifficulty("normal", true);
     } else if (challenge.type === "customText") {
+      CustomText.setPopupTextareaState(challenge.parameters[0] as string);
       CustomText.setText((challenge.parameters[0] as string).split(" "));
       CustomText.setIsTimeRandom(false);
       CustomText.setIsWordRandom(challenge.parameters[1] as boolean);
@@ -221,10 +243,14 @@ export async function setup(challengeName: string): Promise<boolean> {
       Loader.show();
       const response = await fetch("/challenges/" + challenge.parameters[0]);
       Loader.hide();
+      if (response.status !== 200) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
       const scriptdata = await response.text();
       let text = scriptdata.trim();
       text = text.replace(/[\n\r\t ]/gm, " ");
       text = text.replace(/ +/gm, " ");
+      CustomText.setPopupTextareaState(text);
       CustomText.setText(text.split(" "));
       CustomText.setIsWordRandom(false);
       CustomText.setTime(-1);
@@ -283,7 +309,10 @@ export async function setup(challengeName: string): Promise<boolean> {
     challengeLoading = false;
     return true;
   } catch (e) {
-    Notifications.add("Something went wrong: " + e, -1);
+    Notifications.add(
+      Misc.createErrorMessage(e, "Failed to load challenge"),
+      -1
+    );
     return false;
   }
 }

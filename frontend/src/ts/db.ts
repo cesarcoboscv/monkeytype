@@ -5,6 +5,7 @@ import DefaultConfig from "./constants/default-config";
 import { Auth } from "./firebase";
 import { defaultSnap } from "./constants/default-snapshot";
 import * as ConnectionState from "./states/connection";
+import { getFunboxList } from "./utils/misc";
 
 let dbSnapshot: MonkeyTypes.Snapshot | undefined;
 
@@ -15,20 +16,33 @@ export function getSnapshot(): MonkeyTypes.Snapshot | undefined {
 export function setSnapshot(
   newSnapshot: MonkeyTypes.Snapshot | undefined
 ): void {
+  const originalBanned = dbSnapshot?.banned;
+  const originalVerified = dbSnapshot?.verified;
+  const lbOptOut = dbSnapshot?.lbOptOut;
+
+  //not allowing user to override these values i guess?
   try {
     delete newSnapshot?.banned;
   } catch {}
   try {
     delete newSnapshot?.verified;
   } catch {}
+  try {
+    delete newSnapshot?.lbOptOut;
+  } catch {}
   dbSnapshot = newSnapshot;
+  if (dbSnapshot) {
+    dbSnapshot.banned = originalBanned;
+    dbSnapshot.verified = originalVerified;
+    dbSnapshot.lbOptOut = lbOptOut;
+  }
 }
 
 export async function initSnapshot(): Promise<
   MonkeyTypes.Snapshot | number | boolean
 > {
   //send api request with token that returns tags, presets, and data needed for snap
-  const snap = defaultSnap;
+  const snap = { ...defaultSnap };
   try {
     if (!Auth?.currentUser) return false;
     // if (ActivePage.get() == "loading") {
@@ -37,13 +51,15 @@ export async function initSnapshot(): Promise<
     //   LoadingPage.updateBar(16);
     // }
     // LoadingPage.updateText("Downloading user...");
-    const [userResponse, configResponse, tagsResponse, presetsResponse] =
-      await Promise.all([
-        Ape.users.getData(),
-        Ape.configs.get(),
-        Ape.users.getTags(),
-        Ape.presets.get(),
-      ]);
+
+    //getData recreates the user if it doesnt exist - thats why it needs to be called first, by itself
+    const userResponse = await Ape.users.getData();
+
+    const [configResponse, tagsResponse, presetsResponse] = await Promise.all([
+      Ape.configs.get(),
+      Ape.users.getTags(),
+      Ape.presets.get(),
+    ]);
 
     if (userResponse.status !== 200) {
       throw {
@@ -80,6 +96,7 @@ export async function initSnapshot(): Promise<
     snap.name = userData.name;
     snap.personalBests = userData.personalBests;
     snap.banned = userData.banned;
+    snap.lbOptOut = userData.lbOptOut;
     snap.verified = userData.verified;
     snap.discordId = userData.discordId;
     snap.discordAvatar = userData.discordAvatar;
@@ -89,7 +106,7 @@ export async function initSnapshot(): Promise<
       startedTests: userData.startedTests,
       completedTests: userData.completedTests,
     };
-    if (userData.quoteMod === true) snap.quoteMod = true;
+    snap.quoteMod = userData.quoteMod;
     snap.favoriteQuotes = userData.favoriteQuotes ?? {};
     snap.filterPresets = userData.resultFilterPresets ?? [];
     snap.quoteRatings = userData.quoteRatings;
@@ -503,7 +520,11 @@ export async function getLocalPB<M extends MonkeyTypes.Mode>(
   lazyMode: boolean,
   funbox: string
 ): Promise<number> {
-  if (funbox !== "none" && funbox !== "plus_one" && funbox !== "plus_two") {
+  const funboxes = (await getFunboxList()).filter((fb) => {
+    return funbox?.split("#").includes(fb.name);
+  });
+
+  if (!funboxes.every((f) => f.canGetPb)) {
     return 0;
   }
 

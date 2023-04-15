@@ -3,9 +3,9 @@ import * as UserDAL from "../../dal/user";
 import MonkeyError from "../../utils/error";
 import Logger from "../../utils/logger";
 import { MonkeyResponse } from "../../utils/monkey-response";
-import { getDiscordUser } from "../../utils/discord";
+import * as DiscordUtils from "../../utils/discord";
 import { buildAgentLog, sanitizeString } from "../../utils/misc";
-import * as George from "../../tasks/george";
+import GeorgeQueue from "../../queues/george-queue";
 import admin from "firebase-admin";
 import { deleteAllApeKeys } from "../../dal/ape-keys";
 import { deleteAllPresets } from "../../dal/preset";
@@ -14,6 +14,12 @@ import { deleteConfig } from "../../dal/config";
 import { verify } from "../../utils/captcha";
 import * as LeaderboardsDAL from "../../dal/leaderboards";
 import { purgeUserFromDailyLeaderboards } from "../../utils/daily-leaderboards";
+import { randomBytes } from "crypto";
+import * as RedisClient from "../../init/redis";
+import { v4 as uuidv4 } from "uuid";
+import { ObjectId } from "mongodb";
+import * as ReportDAL from "../../dal/report";
+import emailQueue from "../../queues/email-queue";
 
 async function verifyCaptcha(captcha: string): Promise<void> {
   if (!(await verify(captcha))) {
@@ -51,6 +57,92 @@ export async function createNewUser(
   Logger.logToDb("user_created", `${name} ${email}`, uid);
 
   return new MonkeyResponse("User created");
+}
+
+export async function sendVerificationEmail(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const { email, uid } = req.ctx.decodedToken;
+  const isVerified = (
+    await admin
+      .auth()
+      .getUser(uid)
+      .catch((e) => {
+        throw new MonkeyError(
+          500, // this should never happen, but it does. it mightve been caused by auth token cache, will see if disabling cache fixes it
+          "Auth user not found, even though the token got decoded",
+          JSON.stringify({ uid, email, stack: e.stack }),
+          uid
+        );
+      })
+  ).emailVerified;
+  if (isVerified === true) {
+    throw new MonkeyError(400, "Email already verified");
+  }
+
+  const userInfo = await UserDAL.getUser(uid, "request verification email");
+
+  let link = "";
+  try {
+    link = await admin.auth().generateEmailVerificationLink(email, {
+      url:
+        process.env.MODE === "dev"
+          ? "http://localhost:3000"
+          : "https://monkeytype.com",
+    });
+  } catch (e) {
+    if (
+      e.code === "auth/internal-error" &&
+      e.message.includes("TOO_MANY_ATTEMPTS_TRY_LATER")
+    ) {
+      // for some reason this error is not handled with a custom auth/ code, so we have to do it manually
+      throw new MonkeyError(429, "Too many requests. Please try again later");
+    }
+    if (e.code === "auth/user-not-found") {
+      throw new MonkeyError(
+        500,
+        "Auth user not found when the user was found in the database",
+        JSON.stringify({ email: email, userInfoEmail: email, stack: e.stack }),
+        userInfo.uid
+      );
+    }
+    throw e;
+  }
+
+  await emailQueue.sendVerificationEmail(email, userInfo.name, link);
+
+  return new MonkeyResponse("Email sent");
+}
+
+export async function sendForgotPasswordEmail(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const { email } = req.body;
+
+  let auth;
+  try {
+    auth = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code === "auth/user-not-found") {
+      throw new MonkeyError(404, "User not found");
+    }
+    throw e;
+  }
+
+  const userInfo = await UserDAL.getUser(
+    auth.uid,
+    "request forgot password email"
+  );
+
+  const link = await admin.auth().generatePasswordResetLink(email, {
+    url:
+      process.env.MODE === "dev"
+        ? "http://localhost:3000"
+        : "https://monkeytype.com",
+  });
+  await emailQueue.sendForgotPasswordEmail(email, userInfo.name, link);
+
+  return new MonkeyResponse("Email sent if user was found");
 }
 
 export async function deleteUser(
@@ -129,6 +221,21 @@ export async function clearPb(
   return new MonkeyResponse("User's PB cleared");
 }
 
+export async function optOutOfLeaderboards(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const { uid } = req.ctx.decodedToken;
+
+  await UserDAL.optOutOfLeaderboards(uid);
+  await purgeUserFromDailyLeaderboards(
+    uid,
+    req.ctx.configuration.dailyLeaderboards
+  );
+  Logger.logToDb("user_opted_out_of_leaderboards", "", uid);
+
+  return new MonkeyResponse("User opted out of leaderboards");
+}
+
 export async function checkName(
   req: MonkeyTypes.Request
 ): Promise<MonkeyResponse> {
@@ -165,10 +272,11 @@ function getRelevantUserInfo(
   return _.omit(user, [
     "bananas",
     "lbPersonalBests",
-    "quoteMod",
     "inbox",
     "nameHistory",
     "lastNameChange",
+    "_id",
+    "lastResultHashes",
   ]);
 }
 
@@ -182,16 +290,28 @@ export async function getUser(
     userInfo = await UserDAL.getUser(uid, "get user");
   } catch (e) {
     if (e.status === 404) {
-      await admin.auth().deleteUser(uid);
-      throw new MonkeyError(
-        404,
-        "User not found. Please try to sign up again.",
-        "get user",
-        uid
-      );
+      let user;
+      try {
+        user = await admin.auth().getUser(uid);
+        //exists, recreate in db
+        await UserDAL.addUser(user.displayName, user.email, uid);
+        userInfo = await UserDAL.getUser(uid, "get user (recreated)");
+      } catch (e) {
+        if (e.code === "auth/user-not-found") {
+          //doesnt exist
+          throw new MonkeyError(
+            404,
+            "User not found in the database or authentication system. Please try to sign up again.",
+            "get user",
+            uid
+          );
+        } else {
+          throw e;
+        }
+      }
+    } else {
+      throw e;
     }
-
-    throw e;
   }
 
   const agentLog = buildAgentLog(req);
@@ -210,21 +330,52 @@ export async function getUser(
   return new MonkeyResponse("User data retrieved", userData);
 }
 
+export async function getOauthLink(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const connection = RedisClient.getConnection();
+  if (!connection) {
+    throw new MonkeyError(500, "Redis connection not found");
+  }
+
+  const { uid } = req.ctx.decodedToken;
+  const token = randomBytes(10).toString("hex");
+
+  //add the token uid pair to reids
+  await connection.setex(`discordoauth:${uid}`, 60, token);
+
+  //build the url
+  const url = DiscordUtils.getOauthLink();
+
+  //return
+  return new MonkeyResponse("Discord oauth link generated", {
+    url: `${url}&state=${token}`,
+  });
+}
+
 export async function linkDiscord(
   req: MonkeyTypes.Request
 ): Promise<MonkeyResponse> {
+  const connection = RedisClient.getConnection();
+  if (!connection) {
+    throw new MonkeyError(500, "Redis connection not found");
+  }
   const { uid } = req.ctx.decodedToken;
-  const { tokenType, accessToken } = req.body;
+  const { tokenType, accessToken, state } = req.body;
+
+  const redisToken = await connection.getdel(`discordoauth:${uid}`);
+
+  if (!redisToken || redisToken !== state) {
+    throw new MonkeyError(403, "Invalid user token");
+  }
 
   const userInfo = await UserDAL.getUser(uid, "link discord");
   if (userInfo.banned) {
     throw new MonkeyError(403, "Banned accounts cannot link with Discord");
   }
 
-  const { id: discordId, avatar: discordAvatar } = await getDiscordUser(
-    tokenType,
-    accessToken
-  );
+  const { id: discordId, avatar: discordAvatar } =
+    await DiscordUtils.getDiscordUser(tokenType, accessToken);
 
   if (userInfo.discordId) {
     await UserDAL.linkDiscord(uid, userInfo.discordId, discordAvatar);
@@ -252,7 +403,7 @@ export async function linkDiscord(
 
   await UserDAL.linkDiscord(uid, discordId, discordAvatar);
 
-  George.linkDiscord(discordId, uid);
+  GeorgeQueue.linkDiscord(discordId, uid);
   Logger.logToDb("user_discord_link", `linked to ${discordId}`, uid);
 
   return new MonkeyResponse("Discord account linked", {
@@ -271,7 +422,7 @@ export async function unlinkDiscord(
     throw new MonkeyError(404, "User does not have a linked Discord account");
   }
 
-  George.unlinkDiscord(userInfo.discordId, uid);
+  GeorgeQueue.unlinkDiscord(userInfo.discordId, uid);
   await UserDAL.unlinkDiscord(uid);
   Logger.logToDb("user_discord_unlinked", userInfo.discordId, uid);
 
@@ -490,6 +641,7 @@ export async function getProfile(
     discordAvatar,
     xp,
     streak,
+    lbOptOut,
   } = user;
 
   const validTimePbs = _.pick(personalBests?.time, "15", "30", "60", "120");
@@ -517,6 +669,7 @@ export async function getProfile(
     xp,
     streak: streak?.length ?? 0,
     maxStreak: streak?.maxLength ?? 0,
+    lbOptOut,
   };
 
   if (banned) {
@@ -619,4 +772,32 @@ export async function updateInbox(
   await UserDAL.updateInbox(uid, mailIdsToMarkRead, mailIdsToDelete);
 
   return new MonkeyResponse("Inbox updated");
+}
+
+export async function reportUser(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const { uid } = req.ctx.decodedToken;
+  const {
+    reporting: { maxReports, contentReportLimit },
+  } = req.ctx.configuration.quotes;
+
+  const { uid: uidToReport, reason, comment, captcha } = req.body;
+
+  await verifyCaptcha(captcha);
+
+  const newReport: MonkeyTypes.Report = {
+    _id: new ObjectId(),
+    id: uuidv4(),
+    type: "user",
+    timestamp: new Date().getTime(),
+    uid,
+    contentId: `${uidToReport}`,
+    reason,
+    comment,
+  };
+
+  await ReportDAL.createReport(newReport, maxReports, contentReportLimit);
+
+  return new MonkeyResponse("User reported");
 }
