@@ -3,8 +3,11 @@
  * To add a new configuration. Simply add it to this object.
  * When changing this template, please follow the principle of "Secure by default" (https://en.wikipedia.org/wiki/Secure_by_default).
  */
-export const BASE_CONFIGURATION: MonkeyTypes.Configuration = {
+export const BASE_CONFIGURATION: SharedTypes.Configuration = {
   maintenance: false,
+  dev: {
+    responseSlowdownMs: 0,
+  },
   results: {
     savingEnabled: false,
     objectHashCheckEnabled: false,
@@ -12,6 +15,11 @@ export const BASE_CONFIGURATION: MonkeyTypes.Configuration = {
       enabled: false,
       maxPresetsPerUser: 0,
     },
+    limits: {
+      regularUser: 1000,
+      premiumUser: 10000,
+    },
+    maxBatchSize: 1000,
   },
   quotes: {
     reporting: {
@@ -65,6 +73,9 @@ export const BASE_CONFIGURATION: MonkeyTypes.Configuration = {
       enabled: false,
       maxMail: 0,
     },
+    premium: {
+      enabled: false,
+    },
   },
   rateLimiting: {
     badAuthentication: {
@@ -79,8 +90,6 @@ export const BASE_CONFIGURATION: MonkeyTypes.Configuration = {
     leaderboardExpirationTimeInDays: 0,
     validModeRules: [],
     scheduleRewardsModeRules: [],
-    // GOTCHA! MUST ATLEAST BE 1, LRUCache module will make process crash and die
-    dailyLeaderboardCacheSize: 1,
     topResultsToAnnounce: 1, // This should never be 0. Setting to zero will announce all results.
     xpRewardBrackets: [],
   },
@@ -93,36 +102,37 @@ export const BASE_CONFIGURATION: MonkeyTypes.Configuration = {
   },
 };
 
-interface BaseSchema {
+type BaseSchema = {
   type: string;
   label?: string;
   hint?: string;
-}
+};
 
-interface NumberSchema extends BaseSchema {
+type NumberSchema = {
   type: "number";
   min?: number;
-}
+} & BaseSchema;
 
-interface BooleanSchema extends BaseSchema {
+type BooleanSchema = {
   type: "boolean";
-}
+} & BaseSchema;
 
-interface StringSchema extends BaseSchema {
+type StringSchema = {
   type: "string";
-}
-interface ArraySchema<T extends any[]> extends BaseSchema {
+} & BaseSchema;
+
+type ArraySchema<T extends unknown[]> = {
   type: "array";
   items: Schema<T>[number];
-}
+} & BaseSchema;
 
-interface ObjectSchema<T> extends BaseSchema {
+type ObjectSchema<T> = {
   type: "object";
   fields: Schema<T>;
-}
+} & BaseSchema;
 
 type Schema<T> = {
-  [P in keyof T]: T[P] extends any[]
+  [P in keyof T]: T[P] extends unknown[]
     ? ArraySchema<T[P]>
     : T[P] extends number
     ? NumberSchema
@@ -135,7 +145,7 @@ type Schema<T> = {
     : never;
 };
 
-export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<MonkeyTypes.Configuration> =
+export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<SharedTypes.Configuration> =
   {
     type: "object",
     label: "Server Configuration",
@@ -143,6 +153,17 @@ export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<MonkeyTypes.Configuration> 
       maintenance: {
         type: "boolean",
         label: "In Maintenance",
+      },
+      dev: {
+        type: "object",
+        label: "Development",
+        fields: {
+          responseSlowdownMs: {
+            type: "number",
+            label: "Response Slowdown (miliseconds)",
+            min: 0,
+          },
+        },
       },
       results: {
         type: "object",
@@ -170,6 +191,27 @@ export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<MonkeyTypes.Configuration> 
                 min: 0,
               },
             },
+          },
+          limits: {
+            type: "object",
+            label: "maximum results",
+            fields: {
+              regularUser: {
+                type: "number",
+                label: "for regular users",
+                min: 0,
+              },
+              premiumUser: {
+                type: "number",
+                label: "for premium users",
+                min: 0,
+              },
+            },
+          },
+          maxBatchSize: {
+            type: "number",
+            label: "results endpoint max batch size",
+            min: 1,
           },
         },
       },
@@ -248,6 +290,16 @@ export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<MonkeyTypes.Configuration> 
         type: "object",
         label: "Users",
         fields: {
+          premium: {
+            type: "object",
+            label: "Premium",
+            fields: {
+              enabled: {
+                type: "boolean",
+                label: "Enabled",
+              },
+            },
+          },
           signUp: {
             type: "boolean",
             label: "Sign Up Enabled",
@@ -452,11 +504,6 @@ export const CONFIGURATION_FORM_SCHEMA: ObjectSchema<MonkeyTypes.Configuration> 
                 },
               },
             },
-          },
-          dailyLeaderboardCacheSize: {
-            type: "number",
-            label: "Daily Leaderboard Cache Size",
-            min: 1,
           },
           topResultsToAnnounce: {
             type: "number",

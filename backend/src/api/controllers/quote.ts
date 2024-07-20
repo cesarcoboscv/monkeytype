@@ -1,6 +1,6 @@
 import _ from "lodash";
 import { v4 as uuidv4 } from "uuid";
-import { getUser, updateQuoteRatings } from "../../dal/user";
+import { getPartialUser, updateQuoteRatings } from "../../dal/user";
 import * as ReportDAL from "../../dal/report";
 import * as NewQuotesDAL from "../../dal/new-quotes";
 import * as QuoteRatingsDAL from "../../dal/quote-ratings";
@@ -21,7 +21,7 @@ export async function getQuotes(
 ): Promise<MonkeyResponse> {
   const { uid } = req.ctx.decodedToken;
   const quoteMod: boolean | undefined | string = (
-    await getUser(uid, "get quotes")
+    await getPartialUser(uid, "get quotes", ["quoteMod"])
   ).quoteMod;
   let quoteModString: string;
   if (quoteMod === true) {
@@ -33,6 +33,16 @@ export async function getQuotes(
   }
   const data = await NewQuotesDAL.get(quoteModString);
   return new MonkeyResponse("Quote submissions retrieved", data);
+}
+
+export async function isSubmissionEnabled(
+  req: MonkeyTypes.Request
+): Promise<MonkeyResponse> {
+  const { submissionsEnabled } = req.ctx.configuration.quotes;
+  return new MonkeyResponse(
+    "Quote submission " + (submissionsEnabled ? "enabled" : "disabled"),
+    { isEnabled: submissionsEnabled }
+  );
 }
 
 export async function addQuote(
@@ -53,14 +63,14 @@ export async function approveQuote(
   const { uid } = req.ctx.decodedToken;
   const { quoteId, editText, editSource } = req.body;
 
-  const { name } = await getUser(uid, "approve quote");
+  const { name } = await getPartialUser(uid, "approve quote", ["name"]);
 
   if (!name) {
     throw new MonkeyError(500, "Missing name field");
   }
 
   const data = await NewQuotesDAL.approve(quoteId, editText, editSource, name);
-  Logger.logToDb("system_quote_approved", data, uid);
+  void Logger.logToDb("system_quote_approved", data, uid);
 
   return new MonkeyResponse(data.message, data.quote);
 }
@@ -93,7 +103,7 @@ export async function submitRating(
   const { uid } = req.ctx.decodedToken;
   const { quoteId, rating, language } = req.body;
 
-  const user = await getUser(uid, "submit rating");
+  const user = await getPartialUser(uid, "submit rating", ["quoteRatings"]);
 
   const normalizedQuoteId = parseInt(quoteId as string, 10);
   const normalizedRating = Math.round(parseInt(rating as string, 10));

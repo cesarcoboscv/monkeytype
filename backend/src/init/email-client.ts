@@ -6,11 +6,12 @@ import mjml2html from "mjml";
 import mustache from "mustache";
 import { recordEmail } from "../utils/prometheus";
 import { EmailTaskContexts, EmailType } from "../queues/email-queue";
+import { isDevEnvironment } from "../utils/misc";
 
-interface EmailMetadata {
+type EmailMetadata = {
   subject: string;
   templateName: string;
-}
+};
 
 const templates: Record<EmailType, EmailMetadata> = {
   verify: {
@@ -35,10 +36,10 @@ export async function init(): Promise<void> {
     return;
   }
 
-  const { EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_PORT, MODE } = process.env;
+  const { EMAIL_HOST, EMAIL_USER, EMAIL_PASS, EMAIL_PORT } = process.env;
 
-  if (!EMAIL_HOST || !EMAIL_USER || !EMAIL_PASS) {
-    if (MODE === "dev") {
+  if (!(EMAIL_HOST ?? "") || !(EMAIL_USER ?? "") || !(EMAIL_PASS ?? "")) {
+    if (isDevEnvironment()) {
       Logger.warning(
         "No email client configuration provided. Running without email."
       );
@@ -62,7 +63,7 @@ export async function init(): Promise<void> {
     Logger.info("Verifying email client configuration...");
     const result = await transporter.verify();
 
-    if (result !== true) {
+    if (!result) {
       throw new Error(
         `Could not verify email client configuration: ` + JSON.stringify(result)
       );
@@ -76,10 +77,10 @@ export async function init(): Promise<void> {
   }
 }
 
-interface MailResult {
+type MailResult = {
   success: boolean;
   message: string;
-}
+};
 
 export async function sendEmail<M extends EmailType>(
   templateName: EmailType,
@@ -102,7 +103,16 @@ export async function sendEmail<M extends EmailType>(
     html: template,
   };
 
-  const result = await transporter.sendMail(mailOptions);
+  let result;
+  try {
+    result = await transporter.sendMail(mailOptions);
+  } catch (e) {
+    recordEmail(templateName, "fail");
+    return {
+      success: false,
+      message: e.message,
+    };
+  }
 
   recordEmail(templateName, result.accepted.length === 0 ? "fail" : "success");
 
@@ -117,8 +127,9 @@ const EMAIL_TEMPLATES_DIRECTORY = join(__dirname, "../../email-templates");
 const cachedTemplates: Record<string, string> = {};
 
 async function getTemplate(name: string): Promise<string> {
-  if (cachedTemplates[name]) {
-    return cachedTemplates[name];
+  const cachedTemp = cachedTemplates[name];
+  if (cachedTemp !== undefined) {
+    return cachedTemp;
   }
 
   const template = await fs.promises.readFile(

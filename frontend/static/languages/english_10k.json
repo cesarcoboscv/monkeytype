@@ -1,6 +1,5 @@
 {
   "name": "english_10k",
-  "leftToRight": true,
   "noLazyMode": true,
   "orderedByFrequency": true,
   "words": [
@@ -6116,7 +6115,6 @@
     "hormone",
     "meanwhile",
     "proprietary",
-    "childrens",
     "brick",
     "grip",
     "naval",
@@ -9187,7 +9185,6 @@
     "marines",
     "lighthouse",
     "proves",
-    "customised",
     "trilogy",
     "crab",
     "brightness",

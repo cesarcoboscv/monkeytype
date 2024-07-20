@@ -2,7 +2,6 @@ import "dotenv/config";
 import * as db from "./init/db";
 import jobs from "./jobs";
 import { getLiveConfiguration } from "./init/configuration";
-import { initializeDailyLeaderboardsCache } from "./utils/daily-leaderboards";
 import app from "./app";
 import { Server } from "http";
 import { version } from "./version";
@@ -14,11 +13,14 @@ import Logger from "./utils/logger";
 import * as EmailClient from "./init/email-client";
 import { init as initFirebaseAdmin } from "./init/firebase-admin";
 
+import { createIndicies as leaderboardDbSetup } from "./dal/leaderboards";
+import { createIndicies as blocklistDbSetup } from "./dal/blocklist";
+
 async function bootServer(port: number): Promise<Server> {
   try {
     Logger.info(`Starting server version ${version}`);
-    Logger.info(`Starting server in ${process.env.MODE} mode`);
-    Logger.info(`Connecting to database ${process.env.DB_NAME}...`);
+    Logger.info(`Starting server in ${process.env["MODE"]} mode`);
+    Logger.info(`Connecting to database ${process.env["DB_NAME"]}...`);
     await db.connect();
     Logger.success("Connected to database");
 
@@ -26,11 +28,11 @@ async function bootServer(port: number): Promise<Server> {
     initFirebaseAdmin();
 
     Logger.info("Fetching live configuration...");
-    const liveConfiguration = await getLiveConfiguration();
+    await getLiveConfiguration();
     Logger.success("Live configuration fetched");
 
     Logger.info("Initializing email client...");
-    EmailClient.init();
+    await EmailClient.init();
 
     Logger.info("Connecting to redis...");
     await RedisClient.connect();
@@ -50,8 +52,8 @@ async function bootServer(port: number): Promise<Server> {
       );
 
       Logger.info("Initializing workers...");
-      workers.forEach((worker) => {
-        worker(connection).run();
+      workers.forEach(async (worker) => {
+        await worker(connection).run();
       });
       Logger.success(
         `Workers initialized: ${workers
@@ -60,11 +62,15 @@ async function bootServer(port: number): Promise<Server> {
       );
     }
 
-    initializeDailyLeaderboardsCache(liveConfiguration.dailyLeaderboards);
-
     Logger.info("Starting cron jobs...");
     jobs.forEach((job) => job.start());
     Logger.success("Cron jobs started");
+
+    Logger.info("Setting up leaderboard indicies...");
+    await leaderboardDbSetup();
+
+    Logger.info("Setting up blocklist indicies...");
+    await blocklistDbSetup();
 
     recordServerVersion(version);
   } catch (error) {
@@ -79,6 +85,6 @@ async function bootServer(port: number): Promise<Server> {
   });
 }
 
-const PORT = parseInt(process.env.PORT ?? "5005", 10);
+const PORT = parseInt(process.env["PORT"] ?? "5005", 10);
 
-bootServer(PORT);
+void bootServer(PORT);

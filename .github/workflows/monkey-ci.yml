@@ -1,7 +1,8 @@
 name: Monkey CI
 
 env:
-  NODE_VERSION: "16.13.2"
+  NODE_VERSION: "18.19.1"
+  RECAPTCHA_SITE_KEY: "6Lc-V8McAAAAAJ7s6LGNe7MBZnRiwbsbiWts87aj"
 
 permissions:
   contents: read
@@ -11,6 +12,7 @@ permissions:
 on:
   pull_request:
     branches: [master]
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [master]
 
@@ -20,6 +22,7 @@ concurrency:
 
 jobs:
   pre-ci:
+    if: github.event.pull_request.draft == false
     name: pre-ci
     runs-on: ubuntu-latest
     outputs:
@@ -28,7 +31,7 @@ jobs:
       assets-json: ${{ steps.export-changes.outputs.assets-json }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -59,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.pre-ci.outputs.should-build-be == 'true'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -86,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.pre-ci.outputs.should-build-fe == 'true'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
@@ -94,7 +97,7 @@ jobs:
 
       - name: Create stub firebase config
         working-directory: ./frontend/src/ts/constants
-        run: mv ./firebase-config-example.ts ./firebase-config-live.ts
+        run: mv ./firebase-config-example.ts ./firebase-config.ts && cp ./firebase-config.ts ./firebase-config-live.ts
 
       - name: Install dependencies
         run: npm ci & cd frontend && npm ci
@@ -106,7 +109,10 @@ jobs:
         run: npm run lint-fe
 
       - name: Build
-        run: npm run pr-check-ts
+        run: npm run pr-check-build-fe
+
+      - name: Test
+        run: npm run test-fe
 
   ci-assets:
     name: ci-assets
@@ -114,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.pre-ci.outputs.assets-json == 'true'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
         id: filter
         with:
@@ -159,7 +165,7 @@ jobs:
     needs: [ci-be, ci-fe, ci-assets]
     if: ${{ always() && contains(needs.*.result, 'failure') && github.ref != 'refs/heads/master' }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Save the PR number in an artifact
         shell: bash
         env:

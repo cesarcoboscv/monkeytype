@@ -1,47 +1,27 @@
-import * as ManualRestart from "./test/manual-restart-tracker";
-import Config, * as UpdateConfig from "./config";
+import Config from "./config";
 import * as Misc from "./utils/misc";
 import * as MonkeyPower from "./elements/monkey-power";
-import * as NewVersionNotification from "./elements/version-check";
 import * as Notifications from "./elements/notifications";
-import * as Focus from "./test/focus";
-import * as CookiePopup from "./popups/cookie-popup";
+import * as CookiesModal from "./modals/cookies";
 import * as PSA from "./elements/psa";
 import * as ConnectionState from "./states/connection";
-import { Workbox } from "workbox-window";
-//@ts-ignore
+import * as FunboxList from "./test/funbox/funbox-list";
+//@ts-expect-error
 import Konami from "konami";
+import * as ServerConfiguration from "./ape/server-configuration";
 
-ManualRestart.set();
-UpdateConfig.loadFromLocalStorage();
+$((): void => {
+  Misc.loadCSS("/css/slimselect.min.css", true);
+  Misc.loadCSS("/css/balloon.min.css", true);
 
-if (Misc.isLocalhost()) {
-  $("head title").text("localhost");
-  $("#bottom .version .text").text("localhost");
-  $("#bottom #versionGroup").removeClass("hidden");
-  $("body").prepend(
-    `<a class='button configureAPI' href='http://localhost:5005/configure/' target='_blank' aria-label="Configure API" data-balloon-pos="right"><i class="fas fa-fw fa-server"></i></a>`
-  );
-} else {
-  Misc.getLatestReleaseFromGitHub().then((v) => {
-    $("#bottom .version .text").text(v);
-    $("#bottom #versionGroup").removeClass("hidden");
-    NewVersionNotification.show(v);
-  });
-}
+  CookiesModal.check();
 
-Focus.set(true, true);
-$(document).ready(() => {
-  Misc.loadCSS("/./css/select2.min.css", true);
-  Misc.loadCSS("/./css/balloon.min.css", true);
-  Misc.loadCSS("/./css/fa.min.css", true);
-
-  CookiePopup.check();
-  $("body").css("transition", "all .25s, transform .05s");
-  if (Config.quickRestart === "tab" || Config.quickRestart === "esc") {
-    $("#restartTestButton").addClass("hidden");
-  }
-  if (!window.localStorage.getItem("merchbannerclosed")) {
+  //this line goes back to pretty much the beginning of the project and im pretty sure its here
+  //to make sure the initial theme application doesnt animate the background color
+  $("body").css("transition", "background .25s, transform .05s");
+  const merchBannerClosed =
+    window.localStorage.getItem("merchbannerclosed") === "true";
+  if (!merchBannerClosed) {
     Notifications.addBanner(
       `Check out our merchandise, available at <a target="_blank" rel="noopener" href="https://monkeytype.store/">monkeytype.store</a>`,
       1,
@@ -54,85 +34,39 @@ $(document).ready(() => {
     );
   }
 
-  // if (!window.localStorage.getItem("merchbannerclosed2")) {
-  //   Notifications.addBanner(
-  //     `Three new merch designs, available at <a target="_blank" href="https://www.monkeytype.store/unisex-men-s-t-shirts/">monkeytype.store</a>`,
-  //     1,
-  //     "images/cutoutbanner.png",
-  //     false,
-  //     () => {
-  //       window.localStorage.setItem("merchbannerclosed2", "true");
-  //     },
-  //     true
-  //   );
-  // }
+  setTimeout(() => {
+    FunboxList.get(Config.funbox).forEach((it) =>
+      it.functions?.applyGlobalCSS?.()
+    );
+  }, 500); //this approach will probably bite me in the ass at some point
 
-  $("#centerContent")
+  $("#app")
     .css("opacity", "0")
     .removeClass("hidden")
     .stop(true, true)
     .animate({ opacity: 1 }, 250);
-  if (ConnectionState.get()) PSA.show();
+  if (ConnectionState.get()) {
+    void PSA.show();
+    void ServerConfiguration.sync().then(() => {
+      if (!ServerConfiguration.get()?.users.signUp) {
+        $(".signInOut").addClass("hidden");
+        $(".register").addClass("hidden");
+        $(".login").addClass("hidden");
+        $(".disabledNotification").removeClass("hidden");
+      }
+    });
+  }
   MonkeyPower.init();
 
   new Konami("https://keymash.io/");
-});
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    // disabling service workers on localhost - they dont really work well with local development
-    // and cause issues with hot reloading
-    if (Misc.isLocalhost()) {
-      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+  if (Misc.isDevEnvironment()) {
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then(function (registrations) {
         for (const registration of registrations) {
-          // if (registration.scope !== "https://monkeytype.com/")
-          registration.unregister();
+          void registration.unregister();
         }
       });
-    } else {
-      const wb = new Workbox("/service-worker.js");
-
-      let updateBannerId: number;
-
-      // Add an event listener to detect when the registered
-      // service worker has installed but is waiting to activate.
-      wb.addEventListener("waiting", (event) => {
-        // set up a listener that will show a banner as soon as
-        // the previously waiting service worker has taken control.
-        wb.addEventListener("controlling", (event2) => {
-          if (
-            (event.isUpdate || event2.isUpdate) &&
-            updateBannerId === undefined
-          ) {
-            // updateBannerId = Notifications.addBanner(
-            //   "Update ready - please refresh",
-            //   1,
-            //   "gift",
-            //   true
-            // );
-          }
-        });
-
-        wb.messageSkipWaiting();
-      });
-
-      wb.register()
-        .then((registration) => {
-          // if (registration?.waiting) {
-          //   //@ts-ignore
-          //   registration?.onupdatefound = (): void => {
-          //     Notifications.add("Downloading update...", 1, 0, "Update");
-          //   };
-          // }
-          console.log("Service worker registration succeeded:", registration);
-
-          setInterval(() => {
-            wb.update(); //check for updates every 15 minutes
-          }, 900000);
-        })
-        .catch((e) => {
-          console.log("Service worker registration failed:", e);
-        });
-    }
-  });
-}
+  }
+});

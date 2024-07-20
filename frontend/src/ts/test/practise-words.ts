@@ -5,21 +5,23 @@ import * as CustomText from "./custom-text";
 import * as TestInput from "./test-input";
 import * as ConfigEvent from "../observables/config-event";
 import { setCustomTextName } from "../states/custom-text-name";
-import * as Skeleton from "../popups/skeleton";
+import * as Skeleton from "../utils/skeleton";
 import { isPopupVisible } from "../utils/misc";
 
 const wrapperId = "practiseWordsPopupWrapper";
 
-interface Before {
-  mode: MonkeyTypes.Mode | null;
+type Before = {
+  mode: SharedTypes.Config.Mode | null;
   punctuation: boolean | null;
   numbers: boolean | null;
-}
+  customText: SharedTypes.CustomTextData | null;
+};
 
 export const before: Before = {
   mode: null,
   punctuation: null,
   numbers: null,
+  customText: null,
 };
 
 export function init(missed: boolean, slow: boolean): boolean {
@@ -36,7 +38,10 @@ export function init(missed: boolean, slow: boolean): boolean {
   let sortableMissedWords: [string, number][] = [];
   if (missed) {
     Object.keys(TestInput.missedWords).forEach((missedWord) => {
-      sortableMissedWords.push([missedWord, TestInput.missedWords[missedWord]]);
+      const missedWordCount = TestInput.missedWords[missedWord];
+      if (missedWordCount !== undefined) {
+        sortableMissedWords.push([missedWord, missedWordCount]);
+      }
     });
     sortableMissedWords.sort((a, b) => {
       return b[1] - a[1];
@@ -44,17 +49,16 @@ export function init(missed: boolean, slow: boolean): boolean {
     sortableMissedWords = sortableMissedWords.slice(0, limit);
   }
 
-  if (missed && !slow && sortableMissedWords.length == 0) {
+  if (missed && !slow && sortableMissedWords.length === 0) {
     Notifications.add("You haven't missed any words", 0);
     return false;
   }
 
   let sortableSlowWords: [string, number][] = [];
   if (slow) {
-    sortableSlowWords = (TestWords.words.get() as string[]).map((e, i) => [
-      e,
-      TestInput.burstHistory[i],
-    ]);
+    sortableSlowWords = TestWords.words
+      .get()
+      .map((e, i) => [e, TestInput.burstHistory[i] ?? 0]);
     sortableSlowWords.sort((a, b) => {
       return a[1] - b[1];
     });
@@ -67,7 +71,7 @@ export function init(missed: boolean, slow: boolean): boolean {
   // console.log(sortableMissedWords);
   // console.log(sortableSlowWords);
 
-  if (sortableMissedWords.length == 0 && sortableSlowWords.length == 0) {
+  if (sortableMissedWords.length === 0 && sortableSlowWords.length === 0) {
     Notifications.add("Could not start a new custom test", 0);
     return false;
   }
@@ -91,22 +95,26 @@ export function init(missed: boolean, slow: boolean): boolean {
   const punctuation =
     before.punctuation === null ? Config.punctuation : before.punctuation;
   const numbers = before.numbers === null ? Config.numbers : before.numbers;
-  UpdateConfig.setMode("custom", true);
 
-  CustomText.setPopupTextareaState(newCustomText.join(CustomText.delimiter));
+  let customText = null;
+  if (Config.mode === "custom") {
+    customText = CustomText.getData();
+  }
+
+  UpdateConfig.setMode("custom", true);
   CustomText.setText(newCustomText);
-  CustomText.setIsWordRandom(true);
-  CustomText.setIsTimeRandom(false);
-  CustomText.setWord(
+  CustomText.setLimitMode("word");
+  CustomText.setMode("shuffle");
+  CustomText.setLimitValue(
     (sortableSlowWords.length + sortableMissedWords.length) * 5
   );
-  CustomText.setTime(-1);
 
   setCustomTextName("practise", undefined);
 
   before.mode = mode;
   before.punctuation = punctuation;
   before.numbers = numbers;
+  before.customText = customText;
 
   return true;
 }
@@ -115,24 +123,22 @@ export function resetBefore(): void {
   before.mode = null;
   before.punctuation = null;
   before.numbers = null;
+  before.customText = null;
 }
 
-export function showPopup(focus = false): void {
+export function showPopup(): void {
   if (Config.mode === "zen") {
     Notifications.add("Practice words is unsupported in zen mode", 0);
     return;
   }
-  Skeleton.append(wrapperId);
+  Skeleton.append(wrapperId, "popups");
   if (!isPopupVisible(wrapperId)) {
     $("#practiseWordsPopupWrapper")
       .stop(true, true)
       .css("opacity", 0)
       .removeClass("hidden")
       .animate({ opacity: 1 }, 100, () => {
-        if (focus) {
-          console.log("focusing");
-          $("#practiseWordsPopup .missed").trigger("focus");
-        }
+        $(`#${wrapperId}`).trigger("focus");
       });
   }
 }
@@ -167,21 +173,10 @@ $("#practiseWordsPopupWrapper .button").on("keypress", (e) => {
   }
 });
 
-$("#practiseWordsPopupWrapper .button.both").on("focusout", (e) => {
-  e.preventDefault();
-  $("#practiseWordsPopup .missed").trigger("focus");
-});
-
 $(document).on("keydown", (event) => {
   if (event.key === "Escape" && isPopupVisible(wrapperId)) {
     hidePopup();
     event.preventDefault();
-  }
-});
-
-$(document).on("keypress", "#practiseWordsButton", (event) => {
-  if (event.key === "Enter") {
-    showPopup(true);
   }
 });
 

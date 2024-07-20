@@ -2,8 +2,13 @@ import _ from "lodash";
 import * as misc from "../../src/utils/misc";
 
 describe("Misc Utils", () => {
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
   it("getCurrentDayTimestamp", () => {
-    Date.now = jest.fn(() => 1652743381);
+    vi.useFakeTimers();
+    vi.setSystemTime(1652743381);
 
     const currentDay = misc.getCurrentDayTimestamp();
     expect(currentDay).toBe(1641600000);
@@ -313,10 +318,177 @@ describe("Misc Utils", () => {
   });
 
   it("getCurrentWeekTimestamp", () => {
-    Date.now = jest.fn(() => 825289481000); // Sun Feb 25 1996 23:04:41 GMT+0000
+    Date.now = vi.fn(() => 825289481000); // Sun Feb 25 1996 23:04:41 GMT+0000
 
     const currentWeek = misc.getCurrentWeekTimestamp();
     expect(currentWeek).toBe(824688000000); // Mon Feb 19 1996 00:00:00 GMT+0000
+  });
+
+  it("getStartOfDayTimestamp", () => {
+    const testCases = [
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 0,
+        expected: new Date("2023/06/16 00:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 1,
+        expected: new Date("2023/06/16 01:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: -1,
+        expected: new Date("2023/06/15 23:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: -4,
+        expected: new Date("2023/06/15 20:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 4,
+        expected: new Date("2023/06/16 04:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/17 03:00 UTC").getTime(),
+        offset: 4,
+        expected: new Date("2023/06/16 04:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 3,
+        expected: new Date("2023/06/16 03:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+      {
+        input: new Date("2023/06/17 01:00 UTC").getTime(),
+        offset: 3,
+        expected: new Date("2023/06/16 03:00 UTC").getTime(), // Mon Sep 05 2022 00:00:00 GMT+0000
+      },
+    ];
+
+    testCases.forEach(({ input, offset, expected }) => {
+      expect(misc.getStartOfDayTimestamp(input, offset * 3600000)).toEqual(
+        expected
+      );
+    });
+  });
+
+  it("isToday", () => {
+    const testCases = [
+      {
+        now: new Date("2023/06/16 15:00 UTC").getTime(),
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 0,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/16 15:00 UTC").getTime(),
+        input: new Date("2023/06/17 1:00 UTC").getTime(),
+        offset: 0,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/16 15:00 UTC").getTime(),
+        input: new Date("2023/06/16 01:00 UTC").getTime(),
+        offset: 1,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/16 15:00 UTC").getTime(),
+        input: new Date("2023/06/17 01:00 UTC").getTime(),
+        offset: 2,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/16 15:00 UTC").getTime(),
+        input: new Date("2023/06/16 01:00 UTC").getTime(),
+        offset: 2,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/17 01:00 UTC").getTime(),
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 2,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/17 01:00 UTC").getTime(),
+        input: new Date("2023/06/17 02:00 UTC").getTime(),
+        offset: 2,
+        expected: false,
+      },
+    ];
+
+    testCases.forEach(({ now, input, offset, expected }) => {
+      Date.now = vi.fn(() => now);
+      expect(misc.isToday(input, offset)).toEqual(expected);
+    });
+  });
+
+  it("isYesterday", () => {
+    const testCases = [
+      {
+        now: new Date("2023/06/15 15:00 UTC").getTime(),
+        input: new Date("2023/06/14 15:00 UTC").getTime(),
+        offset: 0,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/15 15:00 UTC").getTime(),
+        input: new Date("2023/06/15 15:00 UTC").getTime(),
+        offset: 0,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/15 15:00 UTC").getTime(),
+        input: new Date("2023/06/16 15:00 UTC").getTime(),
+        offset: 0,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/15 15:00 UTC").getTime(),
+        input: new Date("2023/06/13 15:00 UTC").getTime(),
+        offset: 0,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/16 02:00 UTC").getTime(),
+        input: new Date("2023/06/15 02:00 UTC").getTime(),
+        offset: 4,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/16 02:00 UTC").getTime(),
+        input: new Date("2023/06/16 01:00 UTC").getTime(),
+        offset: 4,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/16 02:00 UTC").getTime(),
+        input: new Date("2023/06/15 22:00 UTC").getTime(),
+        offset: 4,
+        expected: false,
+      },
+      {
+        now: new Date("2023/06/16 04:00 UTC").getTime(),
+        input: new Date("2023/06/16 03:00 UTC").getTime(),
+        offset: 4,
+        expected: true,
+      },
+      {
+        now: new Date("2023/06/16 14:00 UTC").getTime(),
+        input: new Date("2023/06/16 12:00 UTC").getTime(),
+        offset: -11,
+        expected: true,
+      },
+    ];
+
+    testCases.forEach(({ now, input, offset, expected }) => {
+      Date.now = vi.fn(() => now);
+      expect(misc.isYesterday(input, offset)).toEqual(expected);
+    });
   });
 
   it("mapRange", () => {

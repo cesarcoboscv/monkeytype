@@ -1,13 +1,24 @@
 import { Router } from "express";
 import * as PublicController from "../controllers/public";
 import * as RateLimit from "../../middlewares/rate-limit";
-import { asyncHandler, validateRequest } from "../../middlewares/api-utils";
+import { asyncHandler } from "../../middlewares/utility";
 import joi from "joi";
+import { validateRequest } from "../../middlewares/validation";
 
 const GET_MODE_STATS_VALIDATION_SCHEMA = {
-  language: joi.string().required(),
-  mode: joi.string().required(),
-  mode2: joi.string().required(),
+  language: joi
+    .string()
+    .max(50)
+    .pattern(/^[a-zA-Z0-9_+]+$/)
+    .required(),
+  mode: joi
+    .string()
+    .valid("time", "words", "quote", "zen", "custom")
+    .required(),
+  mode2: joi
+    .string()
+    .regex(/^(\d)+|custom|zen/)
+    .required(),
 };
 
 const router = Router();

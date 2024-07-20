@@ -1,5 +1,5 @@
 import { debounce } from "throttle-debounce";
-import * as Misc from "../utils/misc";
+// import * as Numbers from "../utils/numbers";
 import * as ConfigEvent from "../observables/config-event";
 import * as BannerEvent from "../observables/banner-event";
 import Config from "../config";
@@ -19,7 +19,7 @@ export let adBlock: boolean;
 export let cookieBlocker: boolean;
 
 // export let choice: "eg" | "pw" = Math.random() < 0.5 ? "eg" : "pw";
-export const choice: "eg" | "pw" = "eg";
+const choice: "eg" | "pw" = "pw";
 
 // console.log("AB choice: " + choice);
 
@@ -32,7 +32,7 @@ export const choice: "eg" | "pw" = "eg";
 //   console.log("AB choice forced: " + choice);
 // }
 
-export function init(): void {
+function init(): void {
   if (choice === "eg") {
     EG.init();
   } else {
@@ -44,22 +44,22 @@ export function init(): void {
       return;
     }
     if (choice === "eg") {
-      EG.refreshVisible();
+      void EG.refreshVisible();
     } else {
-      PW.refreshVisible();
+      void PW.refreshVisible();
     }
   }, 60000);
 
   initialised = true;
 }
 
-export function removeAll(): void {
+function removeAll(): void {
   removeSellout();
   removeOn();
   removeResult();
 }
 
-export function removeSellout(): void {
+function removeSellout(): void {
   $("#ad-footer-wrapper").remove();
   $("#ad-footer-small-wrapper").remove();
   $("#ad-about-1-wrapper").remove();
@@ -78,21 +78,21 @@ export function removeSellout(): void {
   $("#ad-account-2-small-wrapper").remove();
 }
 
-export function removeOn(): void {
+function removeOn(): void {
   $("#ad-vertical-right-wrapper").remove();
   $("#ad-vertical-left-wrapper").remove();
 }
 
-export function removeResult(): void {
+function removeResult(): void {
   $("#ad-result-wrapper").remove();
   $("#ad-result-small-wrapper").remove();
 }
 
 function updateVerticalMargin(): void {
-  const height = $("#bannerCenter").height() as number;
-  const margin = height + Misc.convertRemToPixels(2) + "px";
-  $("#ad-vertical-left-wrapper").css("margin-top", margin);
-  $("#ad-vertical-right-wrapper").css("margin-top", margin);
+  // const height = $("#bannerCenter").height() as number;
+  // const margin = height + Numbers.convertRemToPixels(2) + "px";
+  // $("#ad-vertical-left-wrapper").css("margin-top", margin);
+  // $("#ad-vertical-right-wrapper").css("margin-top", margin);
 }
 
 function updateBreakpoint(noReinstate = false): void {
@@ -104,6 +104,7 @@ function updateBreakpoint(noReinstate = false): void {
     widerThanBreakpoint = false;
   }
   if (noReinstate) return;
+  if (Config.ads === "off" || !initialised) return;
   if (beforeUpdate !== widerThanBreakpoint) {
     if (choice === "eg") {
       EG.reinstate();
@@ -123,12 +124,13 @@ function updateBreakpoint2(noReinstate = false): void {
     widerThanBreakpoint2 = false;
   }
   if (noReinstate) return;
+  if (Config.ads === "off" || !initialised) return;
   if (beforeUpdate !== widerThanBreakpoint2) {
     PW.reinstate();
   }
 }
 
-export async function refreshVisible(): Promise<void> {
+async function _refreshVisible(): Promise<void> {
   if (choice === "eg") {
     await EG.refreshVisible();
   } else {
@@ -140,7 +142,7 @@ export async function checkAdblock(): Promise<void> {
   return new Promise((resolve) => {
     if (choice === "eg") {
       if (adBlock === undefined) {
-        //@ts-ignore
+        //@ts-expect-error
         if (window.egAdPack === undefined) {
           adBlock = true;
         } else {
@@ -148,7 +150,7 @@ export async function checkAdblock(): Promise<void> {
         }
       }
     } else if (choice === "pw") {
-      //@ts-ignore
+      //@ts-expect-error
       if (window.ramp === undefined) {
         adBlock = true;
       }
@@ -166,15 +168,15 @@ export async function checkCookieblocker(): Promise<void> {
         return;
       }
 
-      //@ts-ignore
+      //@ts-expect-error
       if (window.__tcfapi === undefined) {
         cookieBlocker = true;
         resolve();
         return;
       }
-      //@ts-ignore
+      //@ts-expect-error
       window.__tcfapi("getTCData", 2, (tcData, success) => {
-        if (success) {
+        if (success as boolean) {
           if (tcData.eventStatus === "cmpuishown") {
             cookieBlocker = true;
           } else {
@@ -245,11 +247,11 @@ export async function renderResult(): Promise<void> {
   if (choice === "eg") {
     EG.renderResult(widerThanBreakpoint);
   } else {
-    PW.renderResult();
+    void PW.renderResult();
   }
 }
 
-export function updateTestPageAds(visible: boolean): void {
+export function updateFooterAndVerticalAds(visible: boolean): void {
   if (visible) {
     $("#ad-vertical-left-wrapper").removeClass("testPage");
     $("#ad-vertical-right-wrapper").removeClass("testPage");
@@ -265,12 +267,12 @@ export function updateTestPageAds(visible: boolean): void {
 
 export function showConsentPopup(): void {
   if (choice === "eg") {
-    //@ts-ignore
+    //@ts-expect-error
     window.__tcfapi("displayConsentUi", 2, function () {
       //
     });
   } else {
-    //@ts-ignore
+    //@ts-expect-error
     ramp.showCmpModal();
   }
 }
@@ -295,12 +297,12 @@ $(window).on("resize", () => {
 
 ConfigEvent.subscribe((event, value) => {
   if (event === "ads") {
-    if (value == "off") {
+    if (value === "off") {
       removeAll();
-    } else if (value == "result") {
+    } else if (value === "result") {
       removeSellout();
       removeOn();
-    } else if (value == "on") {
+    } else if (value === "on") {
       removeSellout();
     }
   }
@@ -316,9 +318,9 @@ $(document).ready(() => {
 });
 
 window.onerror = function (error): void {
-  //@ts-ignore
+  //@ts-expect-error
   if (choice === "eg") {
-    if (typeof error === "string" && error.substring(0, 6) === "EG APS") {
+    if (typeof error === "string" && error.startsWith("EG APS")) {
       $("#ad-result-wrapper .iconAndText").addClass("withLeft");
     }
   }

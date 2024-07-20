@@ -1,15 +1,13 @@
 import * as ResultController from "../controllers/result";
 import resultSchema from "../schemas/result-schema";
-import {
-  asyncHandler,
-  validateRequest,
-  validateConfiguration,
-} from "../../middlewares/api-utils";
 import * as RateLimit from "../../middlewares/rate-limit";
 import { Router } from "express";
 import { authenticateRequest } from "../../middlewares/auth";
 import joi from "joi";
 import { withApeRateLimiter } from "../../middlewares/ape-rate-limit";
+import { validateRequest } from "../../middlewares/validation";
+import { asyncHandler } from "../../middlewares/utility";
+import { validate } from "../../middlewares/configuration";
 
 const router = Router();
 
@@ -22,6 +20,8 @@ router.get(
   validateRequest({
     query: {
       onOrAfterTimestamp: joi.number().integer().min(1589428800000),
+      limit: joi.number().integer().min(0).max(1000),
+      offset: joi.number().integer().min(0),
     },
   }),
   asyncHandler(ResultController.getResults)
@@ -29,7 +29,7 @@ router.get(
 
 router.post(
   "/",
-  validateConfiguration({
+  validate({
     criteria: (configuration) => {
       return configuration.results.savingEnabled;
     },

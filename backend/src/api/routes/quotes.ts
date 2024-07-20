@@ -3,18 +3,19 @@ import { authenticateRequest } from "../../middlewares/auth";
 import { Router } from "express";
 import * as QuoteController from "../controllers/quote";
 import * as RateLimit from "../../middlewares/rate-limit";
-import {
-  asyncHandler,
-  checkUserPermissions,
-  validateConfiguration,
-  validateRequest,
-} from "../../middlewares/api-utils";
+import { checkUserPermissions } from "../../middlewares/permission";
+import { asyncHandler } from "../../middlewares/utility";
+import { validate } from "../../middlewares/configuration";
+import { validateRequest } from "../../middlewares/validation";
 
 const router = Router();
 
 const checkIfUserIsQuoteMod = checkUserPermissions({
   criteria: (user) => {
-    return !!user.quoteMod;
+    return (
+      user.quoteMod === true ||
+      (typeof user.quoteMod === "string" && user.quoteMod !== "")
+    );
   },
 });
 
@@ -26,9 +27,18 @@ router.get(
   asyncHandler(QuoteController.getQuotes)
 );
 
+router.get(
+  "/isSubmissionEnabled",
+  authenticateRequest({
+    isPublic: true,
+  }),
+  RateLimit.newQuotesIsSubmissionEnabled,
+  asyncHandler(QuoteController.isSubmissionEnabled)
+);
+
 router.post(
   "/",
-  validateConfiguration({
+  validate({
     criteria: (configuration) => {
       return configuration.quotes.submissionsEnabled;
     },
@@ -37,18 +47,23 @@ router.post(
   }),
   authenticateRequest(),
   RateLimit.newQuotesAdd,
-  validateRequest({
-    body: {
-      text: joi.string().min(60).required(),
-      source: joi.string().required(),
-      language: joi
-        .string()
-        .regex(/^[\w+]+$/)
-        .required(),
-      captcha: joi.string().required(),
+  validateRequest(
+    {
+      body: {
+        text: joi.string().min(60).required(),
+        source: joi.string().required(),
+        language: joi
+          .string()
+          .regex(/^[\w+]+$/)
+          .required(),
+        captcha: joi
+          .string()
+          .regex(/[\w-_]+/)
+          .required(),
+      },
     },
-    validationErrorMessage: "Please fill all the fields",
-  }),
+    { validationErrorMessage: "Please fill all the fields" }
+  ),
   asyncHandler(QuoteController.addQuote)
 );
 
@@ -56,14 +71,16 @@ router.post(
   "/approve",
   authenticateRequest(),
   RateLimit.newQuotesAction,
-  validateRequest({
-    body: {
-      quoteId: joi.string().required(),
-      editText: joi.string().allow(null),
-      editSource: joi.string().allow(null),
+  validateRequest(
+    {
+      body: {
+        quoteId: joi.string().required(),
+        editText: joi.string().allow(null),
+        editSource: joi.string().allow(null),
+      },
     },
-    validationErrorMessage: "Please fill all the fields",
-  }),
+    { validationErrorMessage: "Please fill all the fields" }
+  ),
   checkIfUserIsQuoteMod,
   asyncHandler(QuoteController.approveQuote)
 );
@@ -108,6 +125,7 @@ router.post(
       language: joi
         .string()
         .regex(/^[\w+]+$/)
+        .max(50)
         .required(),
     },
   }),
@@ -120,7 +138,7 @@ const withCustomMessages = joi.string().messages({
 
 router.post(
   "/report",
-  validateConfiguration({
+  validate({
     criteria: (configuration) => {
       return configuration.quotes.reporting.enabled;
     },
@@ -131,11 +149,15 @@ router.post(
   validateRequest({
     body: {
       quoteId: withCustomMessages.regex(/\d+/).required(),
-      quoteLanguage: withCustomMessages.regex(/^[\w+]+$/).required(),
+      quoteLanguage: withCustomMessages
+        .regex(/^[\w+]+$/)
+        .max(50)
+        .required(),
       reason: joi
         .string()
         .valid(
           "Grammatical error",
+          "Duplicate quote",
           "Inappropriate content",
           "Low quality content",
           "Incorrect source"

@@ -80,7 +80,7 @@ export function setLeaderboard(
   language: string,
   mode: string,
   mode2: string,
-  times: number[]
+  times: [number, number, number, number]
 ): void {
   leaderboardUpdate.set({ language, mode, mode2, step: "aggregate" }, times[0]);
   leaderboardUpdate.set({ language, mode, mode2, step: "loop" }, times[1]);
@@ -89,7 +89,7 @@ export function setLeaderboard(
 }
 
 export function incrementResult(
-  res: MonkeyTypes.Result<MonkeyTypes.Mode>
+  res: SharedTypes.Result<SharedTypes.Config.Mode>
 ): void {
   const {
     mode,
@@ -105,10 +105,10 @@ export function incrementResult(
   } = res;
 
   let m2 = mode2 as string;
-  if (mode === "time" && ![15, 30, 60, 120].includes(parseInt(mode2))) {
+  if (mode === "time" && !["15", "30", "60", "120"].includes(mode2)) {
     m2 = "custom";
   }
-  if (mode === "words" && ![10, 25, 50, 100].includes(parseInt(mode2))) {
+  if (mode === "words" && !["10", "25", "50", "100"].includes(mode2)) {
     m2 = "custom";
   }
   if (mode === "quote" || mode === "zen" || mode === "custom") m2 = mode;
@@ -177,6 +177,26 @@ const serverVersionCounter = new Counter({
 
 export function recordServerVersion(serverVersion: string): void {
   serverVersionCounter.inc({ version: serverVersion });
+}
+
+const clientErrorByVersion = new Counter({
+  name: "api_client_error_by_version",
+  help: "Client versions which are experiencing 400 errors",
+  labelNames: ["version"],
+});
+
+export function recordClientErrorByVersion(version: string): void {
+  clientErrorByVersion.inc({ version });
+}
+
+const serverErrorByVersion = new Counter({
+  name: "api_server_error_by_version",
+  help: "Server versions which are generating 500 errors",
+  labelNames: ["version"],
+});
+
+export function recordServerErrorByVersion(version: string): void {
+  serverErrorByVersion.inc({ version });
 }
 
 const authTime = new Histogram({

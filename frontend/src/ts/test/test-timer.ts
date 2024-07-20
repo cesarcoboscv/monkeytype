@@ -4,12 +4,12 @@
 import Config, * as UpdateConfig from "../config";
 import * as CustomText from "./custom-text";
 import * as TimerProgress from "./timer-progress";
-import * as LiveWpm from "./live-wpm";
+import * as LiveWpm from "./live-speed";
 import * as TestStats from "./test-stats";
 import * as TestInput from "./test-input";
 import * as TestWords from "./test-words";
 import * as Monkey from "./monkey";
-import * as Misc from "../utils/misc";
+import * as Numbers from "../utils/numbers";
 import * as Notifications from "../elements/notifications";
 import * as Caret from "./caret";
 import * as SlowTimer from "../states/slow-timer";
@@ -47,14 +47,14 @@ function updateTimer(): void {
   if (timerDebug) console.time("timer progress update");
   if (
     Config.mode === "time" ||
-    (Config.mode === "custom" && CustomText.isTimeRandom)
+    (Config.mode === "custom" && CustomText.getLimitMode() === "time")
   ) {
     TimerProgress.update();
   }
   if (timerDebug) console.timeEnd("timer progress update");
 }
 
-function calculateWpmRaw(): MonkeyTypes.WordsPerMinuteAndRaw {
+function calculateWpmRaw(): MonkeyTypes.WpmAndRaw {
   if (timerDebug) console.time("calculate wpm and raw");
   const wpmAndRaw = TestStats.calculateWpmAndRaw();
   if (timerDebug) console.timeEnd("calculate wpm and raw");
@@ -68,7 +68,7 @@ function calculateWpmRaw(): MonkeyTypes.WordsPerMinuteAndRaw {
   return wpmAndRaw;
 }
 
-function monkey(wpmAndRaw: MonkeyTypes.WordsPerMinuteAndRaw): void {
+function monkey(wpmAndRaw: MonkeyTypes.WpmAndRaw): void {
   if (timerDebug) console.time("update monkey");
   const num = Config.blindMode ? wpmAndRaw.raw : wpmAndRaw.wpm;
   Monkey.updateFastOpacity(num);
@@ -77,7 +77,7 @@ function monkey(wpmAndRaw: MonkeyTypes.WordsPerMinuteAndRaw): void {
 
 function calculateAcc(): number {
   if (timerDebug) console.time("calculate acc");
-  const acc = Misc.roundTo2(TestStats.calculateAccuracy());
+  const acc = Numbers.roundTo2(TestStats.calculateAccuracy());
   if (timerDebug) console.timeEnd("calculate acc");
   return acc;
 }
@@ -103,11 +103,11 @@ function layoutfluid(): void {
 
     if (flooredSwitchTimes.includes(time + 3)) {
       LayoutfluidFunboxTimer.show();
-      LayoutfluidFunboxTimer.update(3, layouts[index + 1]);
+      LayoutfluidFunboxTimer.updateTime(3, layouts[index + 1] as string);
     } else if (flooredSwitchTimes.includes(time + 2)) {
-      LayoutfluidFunboxTimer.update(2, layouts[index + 1]);
+      LayoutfluidFunboxTimer.updateTime(2, layouts[index + 1] as string);
     } else if (flooredSwitchTimes.includes(time + 1)) {
-      LayoutfluidFunboxTimer.update(1, layouts[index + 1]);
+      LayoutfluidFunboxTimer.updateTime(1, layouts[index + 1] as string);
     }
 
     if (Config.layout !== layout && layout !== undefined) {
@@ -119,12 +119,11 @@ function layoutfluid(): void {
   if (timerDebug) console.timeEnd("layoutfluid");
 }
 
-function checkIfFailed(
-  wpmAndRaw: MonkeyTypes.WordsPerMinuteAndRaw,
-  acc: number
-): void {
+function checkIfFailed(wpmAndRaw: MonkeyTypes.WpmAndRaw, acc: number): void {
   if (timerDebug) console.time("fail conditions");
   TestInput.pushKeypressesToHistory();
+  TestInput.pushErrorToHistory();
+  TestInput.pushAfkToHistory();
   if (
     Config.minWpm === "custom" &&
     wpmAndRaw.wpm < Config.minWpmCustomSpeed &&
@@ -133,7 +132,7 @@ function checkIfFailed(
     if (timer !== null) clearTimeout(timer);
     SlowTimer.clear();
     slowTimerCount = 0;
-    TimerEvent.dispatch("fail", "min wpm");
+    TimerEvent.dispatch("fail", "min speed");
     return;
   }
   if (Config.minAcc === "custom" && acc < Config.minAccCustom) {
@@ -149,15 +148,15 @@ function checkIfFailed(
 function checkIfTimeIsUp(): void {
   if (timerDebug) console.time("times up check");
   if (
-    Config.mode == "time" ||
-    (Config.mode === "custom" && CustomText.isTimeRandom)
+    Config.mode === "time" ||
+    (Config.mode === "custom" && CustomText.getLimitMode() === "time")
   ) {
     if (
       (Time.get() >= Config.time &&
         Config.time !== 0 &&
         Config.mode === "time") ||
-      (Time.get() >= CustomText.time &&
-        CustomText.time !== 0 &&
+      (Time.get() >= CustomText.getLimitValue() &&
+        CustomText.getLimitValue() !== 0 &&
         Config.mode === "custom")
     ) {
       //times up
@@ -245,7 +244,7 @@ export async function start(): Promise<void> {
         return;
       }
 
-      timerStep();
+      void timerStep();
 
       expected += interval;
       loop();

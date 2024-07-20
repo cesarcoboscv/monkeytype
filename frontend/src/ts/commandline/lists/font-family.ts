@@ -1,4 +1,5 @@
-import Config, * as UpdateConfig from "../../config";
+import * as UpdateConfig from "../../config";
+import * as UI from "../../ui";
 
 const subgroup: MonkeyTypes.CommandsSubgroup = {
   title: "Font family...",
@@ -18,13 +19,24 @@ const commands: MonkeyTypes.Command[] = [
 function update(fonts: MonkeyTypes.FontObject[]): void {
   fonts.forEach((font) => {
     const configVal = font.name.replace(/ /g, "_");
+
+    const customData: Record<string, string | boolean> = {
+      name: font.name,
+    };
+
+    if (font.display !== undefined) {
+      customData["display"] = font.display;
+    }
+
+    customData["isSystem"] = font.systemFont ?? false;
+
     subgroup.list.push({
       id: "changeFont" + font.name.replace(/ /g, "_"),
       display: font.display !== undefined ? font.display : font.name,
       configValue: configVal,
-      customStyle: `font-family: ${font.name}`,
+      customData,
       hover: (): void => {
-        UpdateConfig.previewFontFamily(font.name);
+        UI.previewFontFamily(font.name);
       },
       exec: (): void => {
         UpdateConfig.setFontFamily(font.name.replace(/ /g, "_"));
@@ -36,11 +48,11 @@ function update(fonts: MonkeyTypes.FontObject[]): void {
     display: "custom...",
     input: true,
     hover: (): void => {
-      UpdateConfig.previewFontFamily(Config.fontFamily);
+      UI.clearFontPreview();
     },
-    exec: (name) => {
-      if (!name) return;
-      UpdateConfig.setFontFamily(name.replace(/\s/g, "_"));
+    exec: ({ input }) => {
+      if (input === undefined || input === "") return;
+      UpdateConfig.setFontFamily(input.replace(/\s/g, "_"));
       // Settings.groups.fontFamily.updateInput();
     },
   });

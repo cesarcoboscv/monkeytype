@@ -1,6 +1,5 @@
 {
   "name": "code_luau",
-  "leftToRight": true,
   "noLazyMode": true,
   "words": [
     "and",
@@ -74,6 +73,7 @@
     "string",
     "table",
     "task",
-    "utf8"
+    "utf8",
+    "buffer"
   ]
 }

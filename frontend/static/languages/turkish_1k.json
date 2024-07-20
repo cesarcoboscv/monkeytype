@@ -1,6 +1,5 @@
 {
   "name": "turkish_1k",
-  "leftToRight": true,
   "bcp47": "tr-TR",
   "words": [
     "bir",
@@ -780,7 +779,7 @@
     "kavga",
     "yalan",
     "yendi",
-    "heyecanlandırmak",
+    "heyecanlı",
     "doğal",
     "görünüm",
     "algı",
@@ -1022,7 +1021,7 @@
     "müdür",
     "vergi",
     "fotoğraf",
-    "hastahane",
+    "hastane",
     "dost",
     "otomobil",
     "cadde",
